@@ -92,6 +92,12 @@ def main() -> int:
             stream.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="VTE parallel expert review / targeted revision prototype")
     commands = parser.add_subparsers(dest="command", required=True)
+    gui = commands.add_parser("gui", help="launch the local physician / operator interface")
+    gui.add_argument("--host", default="127.0.0.1", help="bind address; keep loopback for patient data")
+    gui.add_argument("--port", type=int, default=8765)
+    gui.add_argument("--runs", default="runs", help="run-record directory")
+    gui.add_argument("--no-browser", action="store_true", help="do not open a window automatically")
+    gui.add_argument("--verbose", action="store_true")
     for command in ("demo", "run"):
         sub = commands.add_parser(command)
         sub.add_argument("--output", help="new output directory; existing paths are never overwritten")
@@ -105,7 +111,11 @@ def main() -> int:
             sub.add_argument("--case", required=True)
             sub.add_argument("--evidence", required=True)
     try:
-        return asyncio.run(execute(parser.parse_args()))
+        args = parser.parse_args()
+        if args.command == "gui":
+            from .server import serve
+            return serve(args.host, args.port, args.runs, not args.no_browser, args.verbose)
+        return asyncio.run(execute(args))
     except (ValueError, OSError, ContractError) as exc:
         print(f"Configuration/input error: {exc}", file=sys.stderr)
         return 1
