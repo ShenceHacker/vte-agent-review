@@ -20,6 +20,7 @@ class RetrievalTests(unittest.TestCase):
     def test_role_filter_and_chinese_terms(self):
         docs = deepcopy(DEMO_EVIDENCE)
         docs[0]["roles"] = ["B"]
+        docs[0]["text"] = "药物安全：用于中文检索测试。"
         index = EvidenceIndex(docs)
         self.assertEqual(index.search("药物安全", "A"), [])
         self.assertEqual(len(index.search("药物安全", "B")), 1)

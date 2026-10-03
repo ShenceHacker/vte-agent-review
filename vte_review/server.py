@@ -6,7 +6,10 @@ rebinding) and non-JSON POSTs (cross-site form posts). API keys stay in memory o
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import hashlib
+import io
 import json
 import math
 import mimetypes
@@ -30,6 +33,7 @@ from .contracts import ROLE_NAMES, ROLES, ContractError, validate_case
 from .demo import DEMO_CASE, DEMO_EVIDENCE, DemoModel
 from .prompts import PROMPT_VERSION
 from .retrieval import EvidenceIndex
+from .knowledge import KnowledgeStore, SQLiteEvidenceIndex, MAX_TEXT
 from .workflow import Settings, Workflow
 
 WEB = Path(__file__).with_name("web")
@@ -39,12 +43,12 @@ MAX_BODY = 8 * 1024 * 1024
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 DECISIONS = {"accept", "accept_with_changes", "reject"}
 SCENARIOS = {
-    "targeted": {"title": "定向返修", "desc": "A 提出异议 → D 只修改 A 部分 → 仅 A 复核后通过", "expect": "approved"},
-    "dependency": {"title": "依赖传播", "desc": "B 依赖 A；A 被修改后自动触发 B 重审", "expect": "approved"},
-    "shared": {"title": "共同方案变更", "desc": "修订触及 shared_plan，A/B/C 全部重审", "expect": "approved"},
-    "limit": {"title": "达到修订上限", "desc": "A 持续不通过，达到最大修订次数后转人工", "expect": "needs_human_review"},
-    "missing": {"title": "缺少关键信息", "desc": "A 判定需补充患者资料，直接转人工复核", "expect": "needs_human_review"},
-    "stagnant": {"title": "修订无变化", "desc": "D 未产生实际修改，停止循环并转人工", "expect": "needs_human_review"},
+    "targeted": {"title": "Targeted revision", "desc": "A raises an issue; D revises A; only A reviews again.", "expect": "approved"},
+    "dependency": {"title": "Dependency propagation", "desc": "B depends on A; changes to A trigger a new review by B.", "expect": "approved"},
+    "shared": {"title": "Shared plan change", "desc": "The shared plan changes; A, B and C review again.", "expect": "approved"},
+    "limit": {"title": "Revision limit", "desc": "Unresolved issues reach the revision limit.", "expect": "needs_human_review"},
+    "missing": {"title": "Missing information", "desc": "A requests missing patient information.", "expect": "needs_human_review"},
+    "stagnant": {"title": "No-change revision", "desc": "D makes no changes; the workflow stops for human review.", "expect": "needs_human_review"},
 }
 
 
@@ -106,6 +110,7 @@ class App:
         self.runs.mkdir(parents=True, exist_ok=True)
         self.jobs: dict[str, Job] = {}
         self.lock = threading.Lock()
+        self.knowledge = KnowledgeStore(self.runs / "knowledge.sqlite3")
 
     # ---------- queries ----------
     def info(self) -> dict:
@@ -116,6 +121,7 @@ class App:
             has_httpx = False
         return {
             "version": __version__, "prompt_version": PROMPT_VERSION, "runs_dir": str(self.runs),
+            "knowledge": self.knowledge.stats(),
             "roles": ROLE_NAMES, "httpx": has_httpx, "defaults": asdict(Settings()), "scenarios": SCENARIOS,
             "env": {
                 "base_url": os.environ.get("VTE_BASE_URL", ""),
@@ -220,47 +226,52 @@ class App:
         mode = body.get("mode", "demo")
         raw = body.get("settings") or {}
         if not isinstance(raw, dict):
-            raise ValueError("运行参数必须是 JSON 对象")
+            raise ValueError("Settings must be a JSON object")
         defaults = Settings()
         for key, value in raw.items():
             if key in ("max_revisions", "concurrency", "timeout", "top_k"):
                 try:
                     number = float(value)
                 except (TypeError, ValueError):
-                    raise ValueError(f"运行参数 {key} 需要有效数值") from None
+                    raise ValueError(f"Setting {key} requires a valid number") from None
                 if isinstance(value, bool) or not math.isfinite(number) or (key != "timeout" and not number.is_integer()):
-                    raise ValueError(f"运行参数 {key} 需要有限有效数值")
+                    raise ValueError(f"Setting {key} requires a finite valid number")
         settings = Settings(int(raw.get("max_revisions", defaults.max_revisions)),
                             int(raw.get("concurrency", defaults.max_concurrency)),
                             float(raw.get("timeout", defaults.call_timeout)),
                             int(raw.get("top_k", defaults.top_k)))
         meta = {"source": "gui", "mode": mode, "created_at": now_iso(), "app_version": __version__}
+        knowledge_ids = body.get("knowledge_ids")
+        frozen = self.knowledge.snapshot(knowledge_ids) if knowledge_ids is not None else None
+        if frozen is not None:
+            body = {**body, "evidence": frozen}
+            meta.update(knowledge_ids=knowledge_ids, retrieval="SQLite FTS5 / BM25", evidence_snapshot=True)
         if mode == "demo":
             scenario = body.get("scenario", "targeted")
             if scenario not in SCENARIOS:
-                raise ValueError("未知的演示场景")
+                raise ValueError("Unknown demo scenario")
             case = validate_case(body.get("case") or DEMO_CASE)
             index = EvidenceIndex(body.get("evidence") or DEMO_EVIDENCE)
             pace = float(body.get("pace", 0.8))
             if not math.isfinite(pace):
-                raise ValueError("演示节奏需要有限有效数值")
+                raise ValueError("Demo delay must be finite")
             model = PacedDemoModel(scenario, min(max(pace, 0.0), 3.0))
             meta["scenario"] = scenario
         elif mode == "llm":
             case = validate_case(body.get("case"))
             if not body.get("evidence"):
-                raise ValueError("真实模型模式需要先导入证据库")
+                raise ValueError("Model mode requires evidence")
             index = EvidenceIndex(body["evidence"])
             if any(d["synthetic"] for d in index.documents.values()):
-                raise ValueError("真实模型模式不接受 synthetic: true 的合成证据")
+                raise ValueError("Model mode does not accept synthetic evidence")
             llm = body.get("llm") or {}
             if not isinstance(llm, dict) or not isinstance(llm.get("role_models", {}), dict):
-                raise ValueError("模型配置与角色模型必须是 JSON 对象")
+                raise ValueError("Model configuration and role models must be JSON objects")
             key = str(llm.get("api_key") or os.environ.get("VTE_API_KEY", "")).strip()
             name = str(llm.get("model") or os.environ.get("VTE_MODEL", "")).strip()
             base = str(llm.get("base_url") or os.environ.get("VTE_BASE_URL") or "https://api.openai.com/v1").strip()
             if not key or not name:
-                raise ValueError("请填写模型名称与 API Key（或设置环境变量 VTE_MODEL / VTE_API_KEY）")
+                raise ValueError("Enter a model and API key, or set VTE_MODEL and VTE_API_KEY")
             role_models = {r: os.environ[f"VTE_MODEL_{r}"] for r in (*ROLES, "D") if os.environ.get(f"VTE_MODEL_{r}")}
             role_models.update({r: v.strip() for r, v in (llm.get("role_models") or {}).items()
                                 if r in (*ROLES, "D") and isinstance(v, str) and v.strip()})
@@ -268,16 +279,20 @@ class App:
                 from .providers import ChatCompletionsModel
                 model = ChatCompletionsModel(base, key, name, role_models=role_models, timeout=settings.call_timeout)
             except ModuleNotFoundError:
-                raise ValueError('缺少 HTTP 适配器：请运行 python -m pip install -e ".[llm]"') from None
+                raise ValueError('Missing HTTP adapter. Run: python -m pip install -e ".[llm]"') from None
             meta.update(base_url=base, model=name, role_models=role_models)  # never the key
         else:
-            raise ValueError("未知的运行模式")
+            raise ValueError("Unknown mode")
+
+        if frozen is not None:
+            index = SQLiteEvidenceIndex(frozen)
 
         run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid4().hex[:8]
         out = self.runs / run_id
         out.mkdir(parents=True, exist_ok=False)
         write_json(out / "case.json", case)
         write_json(out / "meta.json", meta)
+        write_json(out / "evidence.json", list(index.documents.values()))
         job = Job(run_id)
         with self.lock:
             self.jobs[run_id] = job
@@ -300,6 +315,9 @@ class App:
                 close = getattr(model, "close", None)
                 if close:
                     await close()
+                close_index = getattr(index, "close", None)
+                if close_index:
+                    close_index()
 
         try:
             asyncio.run(main())
@@ -313,16 +331,16 @@ class App:
         path = self.run_dir(run_id)
         result = read_json(path / "result.json")
         if not isinstance(result, dict) or not result.get("draft"):
-            raise ValueError("该运行没有可签署的草案")
+            raise ValueError("This run has no draft to review")
         decision = body.get("decision")
         if decision not in DECISIONS:
-            raise ValueError("请选择审阅结论")
+            raise ValueError("Select a review decision")
         reviewer = str(body.get("reviewer", "")).strip()[:60]
         comment = str(body.get("comment", "")).strip()[:4000]
         if not reviewer:
-            raise ValueError("请填写审阅医师姓名")
+            raise ValueError("Enter a reviewer name")
         if decision != "accept" and not comment:
-            raise ValueError("“修改后采纳”或“不采纳”时请填写审阅意见")
+            raise ValueError("Add a note when accepting with changes or rejecting")
         canonical = json.dumps(result["draft"], ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         entry = {
             "reviewer": reviewer, "decision": decision, "comment": comment, "signed_at": now_iso(),
@@ -334,6 +352,44 @@ class App:
             history.append(entry)
             write_json(path / "physician_reviews.json", history)
         return entry
+
+    @staticmethod
+    def extract_file(body: dict) -> dict:
+        filename = str(body.get("filename", ""))
+        if not filename.lower().endswith(".pdf"):
+            raise ValueError("Upload a PDF, or paste text from a TXT or Markdown document")
+        try:
+            raw = base64.b64decode(body.get("content_base64", ""), validate=True)
+        except (binascii.Error, ValueError, TypeError):
+            raise ValueError("Invalid file encoding") from None
+        if not raw or len(raw) > 5 * 1024 * 1024:
+            raise ValueError("PDF must be smaller than 5 MB")
+        try:
+            from pypdf import PdfReader
+        except ImportError:
+            raise ValueError('PDF support is not installed. Run: python -m pip install -e ".[pdf]"') from None
+        try:
+            reader = PdfReader(io.BytesIO(raw))
+            if reader.is_encrypted:
+                raise ValueError("Use a PDF without password protection")
+            if len(reader.pages) > 300:
+                raise ValueError("Split PDFs longer than 300 pages before importing")
+            pieces = []
+            size = 0
+            for page in reader.pages:
+                value = page.extract_text() or ""
+                size += len(value)
+                if size > MAX_TEXT:
+                    raise ValueError("Extracted text is too long; split the document")
+                pieces.append(value)
+            extracted = "\n\n".join(pieces).strip()
+            if not extracted:
+                raise ValueError("No extractable text. Use an OCR-processed PDF or paste the source text")
+            return {"text": extracted, "pages": len(reader.pages), "filename": filename}
+        except ValueError:
+            raise
+        except Exception:
+            raise ValueError("Unable to read this PDF. Try a text-based PDF or paste the source text") from None
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -399,6 +455,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"runs": self.app.list_runs()})
             if url.path == "/api/demo":
                 return self.send_json({"case": DEMO_CASE, "evidence": DEMO_EVIDENCE, "scenarios": SCENARIOS})
+            if url.path == "/api/knowledge":
+                query = parse_qs(url.query)
+                return self.send_json({"documents": self.app.knowledge.list_documents(query.get("archived") == ["1"]), "stats": self.app.knowledge.stats()})
+            if url.path == "/api/knowledge/search":
+                query = parse_qs(url.query)
+                return self.send_json({"results": self.app.knowledge.search(query.get("q", [""])[0], query.get("role", [""])[0], int(query.get("limit", ["20"])[0]))})
+            knowledge_match = re.fullmatch(r"/api/knowledge/(KB-[a-f0-9]{32})", url.path)
+            if knowledge_match:
+                return self.send_json(self.app.knowledge.get(knowledge_match.group(1)))
             match = re.match(r"^/api/runs/([^/]+)(?:/([A-Za-z._]+))?$", url.path)
             if match:
                 run_id, action = match.groups()
@@ -417,9 +482,9 @@ class Handler(BaseHTTPRequestHandler):
                         "Content-Disposition": f'attachment; filename="{run_id}-{action}"'})
             self.send_json({"error": "not found"}, 404)
         except LookupError:
-            self.send_json({"error": "未找到该运行记录"}, 404)
+            self.send_json({"error": "Record not found"}, 404)
         except ValueError:
-            self.send_json({"error": "无效的请求参数"}, 400)
+            self.send_json({"error": "Invalid request parameter"}, 400)
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
             pass
 
@@ -434,24 +499,33 @@ class Handler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
-            return self.send_json({"error": "无效的请求长度"}, 400)
+            return self.send_json({"error": "Invalid content length"}, 400)
         if length <= 0 or length > MAX_BODY:
-            return self.send_json({"error": "请求体为空或过大"}, 413)
+            return self.send_json({"error": "Request body is empty or too large"}, 413)
         try:
             body = json.loads(self.rfile.read(length).decode("utf-8"))
             if not isinstance(body, dict):
-                raise ValueError("请求体必须是 JSON 对象")
+                raise ValueError("Request body must be a JSON object")
             path = urlparse(self.path).path
             if path == "/api/runs":
                 return self.send_json({"id": self.app.start(body)}, 201)
             if path == "/api/validate":
                 return self.send_json(self.app.validate(body))
+            if path == "/api/knowledge":
+                return self.send_json(self.app.knowledge.add_many(body.get("documents", [body])), 201)
+            if path == "/api/knowledge/extract":
+                return self.send_json(self.app.extract_file(body))
+            if path == "/api/knowledge/snapshot":
+                return self.send_json({"evidence": self.app.knowledge.snapshot(body.get("ids"))})
+            knowledge_match = re.fullmatch(r"/api/knowledge/(KB-[a-f0-9]{32})/archive", path)
+            if knowledge_match:
+                return self.send_json(self.app.knowledge.archive(knowledge_match.group(1), body.get("archived")))
             match = re.match(r"^/api/runs/([^/]+)/signoff$", path)
             if match:
                 return self.send_json(self.app.signoff(match.group(1), body), 201)
             self.send_json({"error": "not found"}, 404)
         except LookupError:
-            self.send_json({"error": "未找到该运行记录"}, 404)
+            self.send_json({"error": "Record not found"}, 404)
         except (ValueError, TypeError) as exc:  # includes ContractError / JSONDecodeError
             self.send_json({"error": str(exc) or type(exc).__name__}, 400)
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
@@ -543,12 +617,12 @@ def serve(host: str = "127.0.0.1", port: int = 8765, runs_dir: str | Path = "run
     httpd.verbose = verbose  # type: ignore[attr-defined]
     shown = "127.0.0.1" if host in ("0.0.0.0", "", "::") else host
     url = f"http://{shown}:{httpd.server_address[1]}/"
-    print(f"VTE 多专家协同审核系统 v{__version__}")
-    print(f"界面地址：{url}")
-    print(f"运行记录：{httpd.app.runs}")  # type: ignore[attr-defined]
+    print(f"VTE Review v{__version__}")
+    print(f"Workspace: {url}")
+    print(f"Run records: {httpd.app.runs}")  # type: ignore[attr-defined]
     if not httpd.loopback:  # type: ignore[attr-defined]
-        print("警告：服务未绑定在本机回环地址，局域网内其他设备可能访问病例数据。")
-    print("关闭此窗口或按 Ctrl+C 退出。")
+        print("Warning: this service is accessible outside loopback.")
+    print("Close this window or press Ctrl+C to stop.")
     if open_browser:
         threading.Timer(0.4, open_window, args=(url,)).start()
     try:

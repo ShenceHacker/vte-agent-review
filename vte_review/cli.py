@@ -17,32 +17,32 @@ from .workflow import Settings, Workflow
 
 
 def report(result: dict) -> str:
-    lines = ["# VTE Agent Review", "", f"状态：`{result['status']}`；原因：`{result['reason']}`。",
-             f"模式：`{result['mode']}`；草案版本：{result['version']}；D 修订次数：{result['revisions']}。", "",
-             "此状态仅表示程序内审核结果，不代表临床有效性或安全性已经验证。", ""]
+    lines = ["# VTE Agent Review", "", f"Status: `{result['status']}`; Reason: `{result['reason']}`.",
+             f"Mode: `{result['mode']}`; Draft version: {result['version']}; D revisions: {result['revisions']}.", "",
+             "Research workflow output; final clinical decisions require physician review.", ""]
     if result["draft"]:
-        lines += ["## " + ("已通过工作流审核的文本" if result["final"] else "未通过的草案"), "", result["draft"]["shared_plan"], ""]
+        lines += ["## " + ("Reviewed draft" if result["final"] else "Draft requiring review"), "", result["draft"]["shared_plan"], ""]
         for role in ROLES:
             section = result["draft"]["sections"][role]
-            lines += [f"### {role}：{ROLE_NAMES[role]}", "", section["text"], "", "证据：" + ", ".join(section["evidence_ids"]), ""]
-    lines += ["## 审核与返修", ""]
+            lines += [f"### {role}: {ROLE_NAMES[role]}", "", section["text"], "", "Evidence: " + ", ".join(section["evidence_ids"]), ""]
+    lines += ["## Reviews and revisions", ""]
     for event in result["events"]:
         if event["event"] == "review_round":
-            lines.append(f"- v{event['version']} 审核：{', '.join(event['roles'])}")
+            lines.append(f"- v{event['version']} Review: {', '.join(event['roles'])}")
         elif event["event"] == "call_completed" and event["task"] == "review":
-            lines.append(f"- {event['role']}：{event['output']['verdict']}；{event['output']['note']}")
+            lines.append(f"- {event['role']}: {event['output']['verdict']}; {event['output']['note']}")
         elif event["event"] == "draft_revised":
-            lines.append(f"- D 修订至 v{event['version']}：{event['reason']}")
-    lines += ["", "## 未决问题", ""]
+            lines.append(f"- D revised to v{event['version']}: {event['reason']}")
+    lines += ["", "## Open issues", ""]
     for role in ROLES:
         if result["approvals"][role] is None:
             review = result["reviews"].get(role, {})
-            lines.append(f"- {role} 尚未通过当前内容。")
+            lines.append(f"- {role} has not approved the current draft.")
             for issue in review.get("issues", []):
-                lines.append(f"  - {issue['id']}：{issue['problem']}；{issue['requested_change']}")
+                lines.append(f"  - {issue['id']}: {issue['problem']}; {issue['requested_change']}")
     if all(v is not None for v in result["approvals"].values()):
-        lines.append("- 无程序内未决问题。")
-    lines += ["", "## 运行数据", "", "```json", json.dumps(result["metrics"], ensure_ascii=False, indent=2), "```", ""]
+        lines.append("- No open workflow issues.")
+    lines += ["", "## Run metrics", "", "```json", json.dumps(result["metrics"], ensure_ascii=False, indent=2), "```", ""]
     return "\n".join(lines)
 
 

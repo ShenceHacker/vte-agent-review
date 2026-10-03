@@ -65,7 +65,7 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("version", info)
         self.assertIn("scenarios", info)
-        self.assertEqual(info["roles"]["A"], "抗凝获益与疗程")
+        self.assertEqual(info["roles"]["A"], "Anticoagulation benefit and duration")
 
     def test_demo_endpoint(self):
         status, data = self.request("/api/demo")
@@ -167,6 +167,67 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(export["final"], export["draft"])
         _, report = self.request(f"/api/runs/{run_id}/report.md")
         self.assertIn(export["draft"]["sections"]["A"]["text"], report.decode())
+
+    def test_knowledge_add_search_snapshot_and_run(self):
+        document = {key: value for key, value in DEMO_EVIDENCE[0].items() if key != "id"}
+        _, added = self.request("/api/knowledge", method="POST", body=document)
+        document_id = added["ids"][0]
+        _, found = self.request("/api/knowledge/search?q=VTE&role=A")
+        self.assertTrue(any(row["document_id"] == document_id for row in found["results"]))
+        _, start = self.request("/api/runs", method="POST", body={"mode": "demo", "knowledge_ids": [document_id], "pace": 0})
+        run_id = start["id"]
+        self.request(f"/api/runs/{run_id}/stream")
+        _, detail = self.request(f"/api/runs/{run_id}")
+        self.assertEqual(detail["status"], "approved")
+        self.assertEqual(detail["meta"]["retrieval"], "SQLite FTS5 / BM25")
+        evidence = json.loads((self.runs_dir / run_id / "evidence.json").read_text(encoding="utf-8"))
+        self.assertEqual(detail["result"]["evidence"][0]["id"], evidence[0]["id"])
+        self.assertTrue(evidence[0]["id"].startswith(document_id))
+        with self.assertRaises(HTTPError) as ctx:
+            self.request("/api/runs", method="POST", body={"mode": "llm", "case": DEMO_CASE, "knowledge_ids": [document_id]})
+        self.assertEqual(ctx.exception.code, 400)
+
+    def test_invalid_knowledge_batch_is_rejected(self):
+        with self.assertRaises(HTTPError) as ctx:
+            self.request("/api/knowledge", method="POST", body={"documents": [{"title": "Incomplete"}]})
+        self.assertEqual(ctx.exception.code, 400)
+
+    def test_empty_pdf_has_clear_extraction_error(self):
+        import base64
+        import io
+        try:
+            from pypdf import PdfWriter
+        except ImportError:
+            self.skipTest("optional PDF dependency not installed")
+        writer = PdfWriter()
+        writer.add_blank_page(width=300, height=300)
+        stream = io.BytesIO()
+        writer.write(stream)
+        with self.assertRaises(HTTPError) as ctx:
+            self.request("/api/knowledge/extract", method="POST", body={"filename": "empty.pdf", "content_base64": base64.b64encode(stream.getvalue()).decode()})
+        self.assertIn("No extractable text", ctx.exception.read().decode())
+
+    def test_pdf_text_extraction(self):
+        import base64
+        import io
+        try:
+            from pypdf import PdfWriter
+            from pypdf.generic import DictionaryObject, NameObject, DecodedStreamObject
+        except ImportError:
+            self.skipTest("optional PDF dependency not installed")
+        writer = PdfWriter()
+        page = writer.add_blank_page(width=400, height=300)
+        font = DictionaryObject({NameObject("/Type"): NameObject("/Font"), NameObject("/Subtype"): NameObject("/Type1"), NameObject("/BaseFont"): NameObject("/Helvetica")})
+        page[NameObject("/Resources")] = DictionaryObject({NameObject("/Font"): DictionaryObject({NameObject("/F1"): font})})
+        content = DecodedStreamObject()
+        content.set_data(b"BT /F1 12 Tf 24 250 Td (Synthetic VTE PDF extraction test.) Tj ET")
+        page[NameObject("/Contents")] = content
+        stream = io.BytesIO()
+        writer.write(stream)
+        status, result = self.request("/api/knowledge/extract", method="POST", body={"filename": "synthetic.pdf", "content_base64": base64.b64encode(stream.getvalue()).decode()})
+        self.assertEqual(status, 200)
+        self.assertIn("Synthetic VTE PDF extraction test.", result["text"])
+        self.assertEqual(result["pages"], 1)
 
 
 if __name__ == "__main__":

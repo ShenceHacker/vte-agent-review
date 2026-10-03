@@ -6,10 +6,10 @@ from typing import Any
 
 ROLES = ("A", "B", "C")
 ROLE_NAMES = {
-    "A": "抗凝获益与疗程",
-    "B": "药物适用性与用药安全",
-    "C": "出血风险与患者约束",
-    "D": "协调与修订",
+    "A": "Anticoagulation benefit and duration",
+    "B": "Drug eligibility and medication safety",
+    "C": "Bleeding risk and patient constraints",
+    "D": "Coordination and revision",
 }
 
 
