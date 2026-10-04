@@ -35,7 +35,8 @@ def parse_json(value):
 class ChatCompletionsModel:
     def __init__(self, base_url: str, api_key: str, model: str, *, role_models: dict | None = None,
                  timeout: float = 60, max_tokens: int = 3000, transport=None,
-                 api_style: str = "chat_completions", max_tool_rounds: int = 4):
+                 api_style: str = "chat_completions", max_tool_rounds: int = 4,
+                 reasoning_effort: str | None = None):
         import httpx
 
         parsed = urlparse(base_url)
@@ -43,8 +44,11 @@ class ChatCompletionsModel:
             raise ValueError("base URL must not contain credentials, query, or fragment")
         if parsed.scheme != "https" and not (parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1", "::1"}):
             raise ValueError("use HTTPS except for a local model server")
-        if not api_key.strip() or not model.strip() or max_tokens < 1:
+        if not api_key.strip() or not model.strip() or type(max_tokens) is not int or max_tokens < 1:
             raise ValueError("API key, model, and positive token limit are required")
+        if reasoning_effort not in {None, "none", "minimal", "low", "medium", "high", "xhigh", "max"}:
+            raise ValueError("Invalid reasoning effort")
+        self.reasoning_effort = reasoning_effort
         self.model = model
         self.role_models = role_models or {}
         self.max_tokens = max_tokens
@@ -53,8 +57,10 @@ class ChatCompletionsModel:
         self.api_style, self.max_tool_rounds = api_style, max_tool_rounds
         self.client = httpx.AsyncClient(
             base_url=base_url.rstrip("/") + "/",
-            headers={"Authorization": "Bearer " + api_key},
-            timeout=timeout, transport=transport, follow_redirects=False,
+            headers={"Authorization": "Bearer " + api_key,
+                     "User-Agent": "VTE-Anticoagulation-Assistant/0.4.0"},
+            timeout=timeout, transport=transport if transport is not None else httpx.AsyncHTTPTransport(retries=2),
+            follow_redirects=False,
         )
 
     async def close(self):
@@ -87,13 +93,43 @@ class ChatCompletionsModel:
     async def _post(self, endpoint: str, body: dict) -> dict:
         import httpx
         try:
+            if endpoint == "responses":
+                async with self.client.stream("POST", endpoint, json={**body, "stream": True}) as response:
+                    response.raise_for_status()
+                    if "application/json" in response.headers.get("content-type", ""):
+                        # Compatibility endpoints may still return a complete JSON response.
+                        await response.aread()
+                        return response.json()
+                    if "text/event-stream" not in response.headers.get("content-type", ""):
+                        raise ProviderError("model endpoint returned an unsupported response type")
+                    data, size = [], 0
+                    async for line in response.aiter_lines():
+                        size += len(line)
+                        if size > 16 * 1024 * 1024:
+                            raise ProviderError("model response stream exceeded the size limit")
+                        if line.startswith("data:"):
+                            data.append(line[5:].lstrip())
+                        elif not line and data:
+                            payload = "\n".join(data)
+                            data = []
+                            if payload == "[DONE]":
+                                continue
+                            event = parse_json(payload)
+                            if event.get("type") in {"response.completed", "response.incomplete"}:
+                                return event["response"]
+                            if event.get("type") in {"error", "response.failed"}:
+                                raise ProviderError("model response stream failed")
+                    raise ProviderError("model response stream ended without a completion event")
             response = await self.client.post(endpoint, json=body)
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             # Do not print remote error bodies, headers, or secrets.
             raise ProviderError(f"model endpoint returned HTTP {exc.response.status_code}") from None
-        except httpx.RequestError:
-            raise ProviderError("model endpoint network/timeout error") from None
+        except httpx.RequestError as exc:
+            # The exception class is safe; raw messages may expose request details.
+            raise ProviderError("model endpoint network/timeout error (" + type(exc).__name__ + ")") from None
+        except (ValueError, KeyError, TypeError, AttributeError):
+            raise ProviderError("model endpoint returned invalid JSON/events") from None
         try:
             return response.json()
         except ValueError:
@@ -102,7 +138,9 @@ class ChatCompletionsModel:
     async def _dialog(self, task, role, payload, session=None, images=None):
         selected = self.role_models.get(role, self.model)
         prompt = system_prompt(task, role)
-        state = [self._user(json.dumps(payload, ensure_ascii=False, allow_nan=False), images)]
+        # JSON mode checks the input messages, not only Responses instructions.
+        state = [self._user("Return a JSON object following the system schema.\nInput data:\n"
+                            + json.dumps(payload, ensure_ascii=False, allow_nan=False), images)]
         if self.api_style == "chat_completions":
             state.insert(0, {"role": "system", "content": prompt})
         usage, seen_ids = {}, set()
@@ -115,12 +153,16 @@ class ChatCompletionsModel:
                 if definitions:
                     request["tools"] = [{"type": "function", **d["function"], "strict": False} for d in definitions]
                 endpoint = "responses"
+                if self.reasoning_effort is not None:
+                    request["reasoning"] = {"effort": self.reasoning_effort}
             else:
                 request = {"model": selected, "messages": state, "response_format": {"type": "json_object"},
                            "max_completion_tokens": self.max_tokens}
                 if definitions:
                     request["tools"] = definitions
                 endpoint = "chat/completions"
+                if self.reasoning_effort is not None:
+                    request["reasoning_effort"] = self.reasoning_effort
             if definitions:
                 request["tool_choice"] = "auto"
             body = await self._post(endpoint, request)

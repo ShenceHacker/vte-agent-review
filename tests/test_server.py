@@ -50,7 +50,7 @@ class ServerTests(unittest.TestCase):
     def test_static_index_and_assets(self):
         status, content = self.request("/")
         self.assertEqual(status, 200)
-        self.assertIn(b"VTE Review", content)
+        self.assertIn(b"VTE Anticoagulation Assistant", content)
 
         status, css = self.request("/static/styles.css")
         self.assertEqual(status, 200)
@@ -58,7 +58,7 @@ class ServerTests(unittest.TestCase):
 
         status, js = self.request("/static/app.js")
         self.assertEqual(status, 200)
-        self.assertIn(b"VTE Review", js)
+        self.assertIn(b"VTE Anticoagulation Assistant", js)
 
     def test_info_endpoint(self):
         status, info = self.request("/api/info")

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VTE Review</title>
+<title>VTE Anticoagulation Assistant</title>
 <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/styles.css">
 <link rel="stylesheet" href="/static/workspace.css">
@@ -14,14 +14,14 @@
     <div class="brand">
       <img src="/static/logo.svg" alt="" class="brand-logo">
       <div>
-        <div class="brand-name">VTE Review</div>
+        <div class="brand-name">VTE<span class="brand-line">Anticoagulation</span><span class="brand-line">Assistant</span></div>
       </div>
     </div>
     <nav class="nav" aria-label="Main navigation">
       <div class="nav-caption">WORKSPACE</div>
       <a href="#/" data-nav="dashboard"><i data-icon="grid"></i><span>Overview</span></a>
-      <a href="#/new" data-nav="new"><i data-icon="plus"></i><span>New review</span></a>
-      <a href="#/history" data-nav="history"><i data-icon="folder"></i><span>Reviews</span></a>
+      <a href="#/new" data-nav="new"><i data-icon="plus"></i><span class="nav-label" data-short="New plan">New recommendation</span></a>
+      <a href="#/history" data-nav="history"><i data-icon="folder"></i><span class="nav-label" data-short="Plans">Recommendations</span></a>
       <a href="#/patients" data-nav="patients"><i data-icon="users"></i><span>Patients</span></a>
       <a href="#/knowledge" data-nav="knowledge"><i data-icon="book"></i><span>Knowledge base</span></a>
       <div class="nav-caption secondary">TOOLS</div>
@@ -37,7 +37,7 @@
     <header class="topbar">
       <div class="crumbs" id="crumbs"></div>
       <div class="topbar-right">
-        <div class="global-search"><i data-icon="search"></i><input aria-label="Search reviews" placeholder="Search reviews" data-key="global-search"><kbd>↵</kbd></div>
+        <div class="global-search"><i data-icon="search"></i><input aria-label="Search recommendations" placeholder="Search recommendations" data-key="global-search"><kbd>↵</kbd></div>
         <div class="profile-mark" title="Local workspace">V</div>
       </div>
     </header>

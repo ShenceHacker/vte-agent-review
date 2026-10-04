@@ -17,7 +17,7 @@ from .workflow import Settings, Workflow
 
 
 def report(result: dict) -> str:
-    lines = ["# VTE Agent Review", "", f"Status: `{result['status']}`; Reason: `{result['reason']}`.",
+    lines = ["# VTE Anticoagulation Assistant", "", f"Status: `{result['status']}`; Reason: `{result['reason']}`.",
              f"Mode: `{result['mode']}`; Draft version: {result['version']}; D revisions: {result['revisions']}.", "",
              "Research workflow output; final clinical decisions require physician review.", ""]
     if result["draft"]:
@@ -71,7 +71,9 @@ async def execute(args) -> int:
         role_models = {r: os.environ[f"VTE_MODEL_{r}"] for r in (*ROLES, "D") if os.environ.get(f"VTE_MODEL_{r}")}
         model = ChatCompletionsModel(os.environ.get("VTE_BASE_URL", "https://api.openai.com/v1"),
                                      key, name, role_models=role_models, timeout=args.timeout,
-                                     api_style=os.environ.get("VTE_API_STYLE", "chat_completions"))
+                                     api_style=os.environ.get("VTE_API_STYLE", "chat_completions"),
+                                     reasoning_effort=os.environ.get("VTE_REASONING_EFFORT") or None,
+                                     max_tokens=int(os.environ.get("VTE_MAX_OUTPUT_TOKENS", "3000")))
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid4().hex[:8]
     out = Path(args.output or Path("runs") / run_id).resolve()
     try:
@@ -109,7 +111,7 @@ def main() -> int:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
-    parser = argparse.ArgumentParser(description="VTE parallel expert review / targeted revision prototype")
+    parser = argparse.ArgumentParser(description="VTE anticoagulation recommendations with specialist review and targeted revision")
     commands = parser.add_subparsers(dest="command", required=True)
     gui = commands.add_parser("gui", help="launch the local physician / operator interface")
     gui.add_argument("--host", default="127.0.0.1", help="bind address; keep loopback for patient data")

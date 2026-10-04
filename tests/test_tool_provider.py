@@ -17,6 +17,44 @@ class ToolProviderTests(unittest.IsolatedAsyncioTestCase):
 
     def session(self): return ClinicalTools("B", case(), EvidenceIndex(DEMO_EVIDENCE))
 
+    async def test_responses_stream_uses_completed_payload_and_explicit_effort(self):
+        def respond(request):
+            body = json.loads(request.content)
+            self.assertTrue(body["stream"])
+            self.assertEqual(body["reasoning"], {"effort": "low"})
+            final = {"status": "completed", "model": "test", "output": [{"type": "message", "content": [{"type": "output_text", "text": '{"ok":true}'}]}], "usage": {"total_tokens": 12}}
+            events = [{"type": "response.output_text.delta", "delta": "not a complete answer"}, {"type": "response.completed", "response": final}]
+            content = "".join("data: " + json.dumps(e) + "\n\n" for e in events)
+            return httpx.Response(200, headers={"Content-Type": "text/event-stream"}, content=content)
+        model = self.model(respond, api_style="responses", reasoning_effort="low")
+        try:
+            reply = await model.complete("assess", "A", {})
+        finally:
+            await model.close()
+        self.assertEqual(reply.data, {"ok": True})
+        self.assertEqual(reply.usage["total_tokens"], 12)
+
+    async def test_responses_partial_stream_does_not_become_an_answer(self):
+        def respond(request):
+            return httpx.Response(200, headers={"Content-Type": "text/event-stream"}, content='data: {"type":"response.output_text.delta","delta":"partial"}\n\ndata: [DONE]\n\n')
+        model = self.model(respond, api_style="responses")
+        try:
+            with self.assertRaisesRegex(ProviderError, "without a completion"):
+                await model.complete("assess", "A", {})
+        finally:
+            await model.close()
+
+    async def test_responses_stream_error_is_sanitized(self):
+        def respond(request):
+            return httpx.Response(200, headers={"Content-Type": "text/event-stream"}, content='data: {"type":"error","message":"do not expose synthetic-secret"}\n\n')
+        model = self.model(respond, api_style="responses")
+        try:
+            with self.assertRaises(ProviderError) as err:
+                await model.complete("assess", "A", {})
+            self.assertEqual(str(err.exception), "model response stream failed")
+        finally:
+            await model.close()
+
     async def test_chat_tool_result_returns_to_same_conversation(self):
         seen=[]
         def respond(request):
@@ -38,6 +76,7 @@ class ToolProviderTests(unittest.IsolatedAsyncioTestCase):
         reasoning={"id":"r1","type":"reasoning","summary":[],"encrypted_content":"synthetic-encrypted"}
         def respond(request):
             data=json.loads(request.content); seen.append(data)
+            self.assertIn("JSON", data["input"][0]["content"][0]["text"])
             if len(seen)==1:
                 return httpx.Response(200,json={"status":"completed","output":[reasoning,{"type":"function_call","call_id":"c1","name":"calculate_crcl","arguments":"{}"}],"usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}})
             self.assertIn(reasoning,data["input"])

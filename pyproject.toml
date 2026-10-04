@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "vte-agent-review"
 version = "0.4.0"
-description = "Parallel specialist review and targeted revision loops for VTE research"
+description = "VTE Anticoagulation Assistant: treatment recommendations with specialist review and targeted revision"
 requires-python = ">=3.11"
 dependencies = []
 

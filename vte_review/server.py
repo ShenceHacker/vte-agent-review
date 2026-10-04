@@ -130,11 +130,14 @@ class App(WorkspaceServices):
             "version": __version__, "prompt_version": PROMPT_VERSION, "runs_dir": str(self.runs),
             "knowledge": self.knowledge.stats(),
             "capabilities": ["patient_memory", "source_images", "docx_intake", "tool_calling", "clinical_checks", "research_labels"],
-            "roles": ROLE_NAMES, "httpx": has_httpx, "defaults": asdict(Settings()), "scenarios": SCENARIOS,
+            "roles": ROLE_NAMES, "httpx": has_httpx,
+            "defaults": asdict(Settings(call_timeout=float(os.environ.get("VTE_CALL_TIMEOUT", "60")))), "scenarios": SCENARIOS,
             "env": {
                 "base_url": os.environ.get("VTE_BASE_URL", ""),
                 "model": os.environ.get("VTE_MODEL", ""),
                 "api_style": os.environ.get("VTE_API_STYLE", "chat_completions"),
+                "reasoning_effort": os.environ.get("VTE_REASONING_EFFORT") or None,
+                "max_output_tokens": int(os.environ.get("VTE_MAX_OUTPUT_TOKENS", "3000")),
                 "api_key_set": bool(os.environ.get("VTE_API_KEY")),
                 "role_models": {r: os.environ.get(f"VTE_MODEL_{r}", "") for r in (*ROLES, "D")},
             },
@@ -239,7 +242,7 @@ class App(WorkspaceServices):
         raw = body.get("settings") or {}
         if not isinstance(raw, dict):
             raise ValueError("Settings must be a JSON object")
-        defaults = Settings()
+        defaults = Settings(call_timeout=float(os.environ.get("VTE_CALL_TIMEOUT", "60")))
         for key, value in raw.items():
             if key in ("max_revisions", "concurrency", "timeout", "top_k"):
                 try:
@@ -290,10 +293,15 @@ class App(WorkspaceServices):
             try:
                 from .providers import ChatCompletionsModel
                 api_style = llm.get("api_style") or os.environ.get("VTE_API_STYLE", "chat_completions")
-                model = ChatCompletionsModel(base, key, name, role_models=role_models, timeout=settings.call_timeout, api_style=api_style)
+                effort = llm.get("reasoning_effort") or os.environ.get("VTE_REASONING_EFFORT") or None
+                max_tokens = llm.get("max_output_tokens", int(os.environ.get("VTE_MAX_OUTPUT_TOKENS", "3000")))
+                model = ChatCompletionsModel(base, key, name, role_models=role_models, timeout=settings.call_timeout,
+                                            api_style=api_style, reasoning_effort=effort, max_tokens=max_tokens)
             except ModuleNotFoundError:
                 raise ValueError('Missing HTTP adapter. Run: python -m pip install -e ".[llm]"') from None
-            meta.update(base_url=base, model=name, role_models=role_models, api_style=api_style)  # never the key
+            meta.update(base_url=base, model=name, role_models=role_models, api_style=api_style,
+                        reasoning_effort=effort, max_output_tokens=max_tokens,
+                        responses_streaming=api_style == "responses")  # never the key
         else:
             raise ValueError("Unknown mode")
 
@@ -681,7 +689,7 @@ def serve(host: str = "127.0.0.1", port: int = 8765, runs_dir: str | Path = "run
     httpd.verbose = verbose  # type: ignore[attr-defined]
     shown = "127.0.0.1" if host in ("0.0.0.0", "", "::") else host
     url = f"http://{shown}:{httpd.server_address[1]}/"
-    print(f"VTE Review v{__version__}")
+    print(f"VTE Anticoagulation Assistant v{__version__}")
     print(f"Workspace: {url}")
     print(f"Run records: {httpd.app.runs}")  # type: ignore[attr-defined]
     if not httpd.loopback:  # type: ignore[attr-defined]

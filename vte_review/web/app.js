@@ -82,7 +82,7 @@
   const badge = (t, c, extra = "") => `<span class="badge ${c} ${extra}">${esc(t)}</span>`;
   const statusBadge = (s) => { const x = STATUS[s] || { t: s || "Unknown", c: "gray" }; return badge(x.t, x.c); };
   const roleTag = (r, size) => `<span class="role-tag ${r}"${size ? ` style="width:${size}px;height:${size}px;font-size:${Math.round(size * .48)}px;border-radius:${Math.round(size / 3.4)}px"` : ""}>${r}</span>`;
-  const crumb = (...xs) => [`<span>VTE Review</span>`, ...xs.map((x, i) => (i === xs.length - 1 ? `<b>${esc(x)}</b>` : `<span>${esc(x)}</span>`))].join(`<span class="sep">/</span>`);
+  const crumb = (...xs) => [`<span>VTE Anticoagulation Assistant</span>`, ...xs.map((x, i) => (i === xs.length - 1 ? `<b>${esc(x)}</b>` : `<span>${esc(x)}</span>`))].join(`<span class="sep">/</span>`);
   const fmtVal = (v) => (typeof v === "boolean" ? (v ? "Yes" : "No") : typeof v === "string" ? v : JSON.stringify(v));
   function reasonText(r) {
     if (!r) return "";
@@ -228,7 +228,7 @@
 
   /* ================= dashboard ================= */
   function runRows(runs) {
-    if (!runs.length) return `<tr><td colspan="6"><div class="empty">${icon("folder")}<div>No matching reviews</div></div></td></tr>`;
+    if (!runs.length) return `<tr><td colspan="6"><div class="empty">${icon("folder")}<div>No matching recommendations</div></div></td></tr>`;
     return runs.map((r) => `<tr class="click" tabindex="0" role="link" aria-label="Open case ${esc(r.case_id || r.id)}" data-action="open-run" data-id="${esc(r.id)}">
       <td><div style="font-weight:600">${esc(r.case_id || "—")}</div><div class="muted small trunc">${esc(r.question || "")}</div></td>
       <td>${statusBadge(r.status)}</td>
@@ -248,11 +248,11 @@
       const runs = data.runs, stats = library.stats;
       const n = (status) => runs.filter((r) => r.status === status).length;
       const metric = (value, label, ic) => `<div class="metric-card"><div class="metric-top">${label}${icon(ic)}</div><div class="metric-value">${value}</div></div>`;
-      const recent = runs.length ? runTable(runs.slice(0, 5)) : `<div class="recent-empty"><div class="empty-file">${icon("file")}</div><b>No reviews yet</b><a href="#/new" class="btn sm" style="margin-top:14px">${icon("plus")}New review</a></div>`;
-      setView(`<div class="dashboard-stack"><div class="dashboard-head"><h1>Overview</h1><div class="row wrap"><button class="btn" data-action="quick-demo" data-s="targeted">${icon("play")}Run demo</button><a class="btn primary" href="#/new">${icon("plus")}New review</a></div></div>
-      <section class="agent-team"><div class="team-heading"><h2>Review team</h2><span>3 specialists · 1 coordinator</span></div><div class="robot-grid">${[...ROLES,"D"].map((r) => `<button class="robot-card ${r}" data-action="agent-profile" data-r="${r}" aria-label="View Agent ${r}: ${ROLE[r].short}"><span class="robot-id">AGENT ${r}</span><img src="/static/agent-${r.toLowerCase()}.svg" alt="Agent ${r} robot wearing a white coat"><strong>${ROLE[r].short}</strong><span class="robot-description">${({A:"Benefit & duration",B:"Eligibility & dosing",C:"Bleeding & constraints",D:"Synthesis & revision"})[r]}</span><span class="robot-details">View role ${icon("chevron")}</span></button>`).join("")}</div><div class="team-process"><span>${icon("users")}Parallel assessment</span>${icon("chevron")}<span>${icon("layers")}Coordinated draft</span>${icon("chevron")}<span>${icon("refresh")}Targeted review</span></div></section>
-      <div class="dashboard-stats">${metric(runs.length,"Total reviews","folder")}${metric(n("approved"),"Agent-approved","shield")}${metric(n("needs_human_review"),"Needs human review","alert")}${metric(stats.documents,"Knowledge documents","book")}</div>
-      <div class="dashboard-bottom"><section class="card recent-card"><div class="card-h"><h3>Recent reviews</h3><a href="#/history" class="btn ghost sm">View all${icon("chevron")}</a></div>${recent}</section><section class="card library-summary"><div class="card-h"><h3>Knowledge base</h3>${icon("database")}</div><div class="card-b"><div class="library-numbers"><b>${stats.documents}<small>documents</small></b><b>${stats.chunks}<small>passages</small></b></div><div class="library-status">${icon("check")}Full-text search ready</div><a class="btn primary" href="#/knowledge" style="width:100%;margin-top:22px">${icon("book")}Open library</a></div></section></div></div>`);
+      const recent = runs.length ? runTable(runs.slice(0, 5)) : `<div class="recent-empty"><div class="empty-file">${icon("file")}</div><b>No recommendations yet</b><a href="#/new" class="btn sm" style="margin-top:14px">${icon("plus")}New recommendation</a></div>`;
+      setView(`<div class="dashboard-stack"><div class="dashboard-head"><h1>Overview</h1><div class="row wrap"><button class="btn" data-action="quick-demo" data-s="targeted">${icon("play")}Run demo</button><a class="btn primary" href="#/new">${icon("plus")}New recommendation</a></div></div>
+      <section class="agent-team"><div class="team-heading"><h2>Clinical team</h2><span>3 specialists · 1 coordinator</span></div><div class="robot-grid">${[...ROLES,"D"].map((r) => `<button class="robot-card ${r}" data-action="agent-profile" data-r="${r}" aria-label="View Agent ${r}: ${ROLE[r].short}"><span class="robot-id">AGENT ${r}</span><img src="/static/agent-${r.toLowerCase()}.svg" alt="Agent ${r} robot wearing a white coat"><strong>${ROLE[r].short}</strong><span class="robot-description">${({A:"Benefit & duration",B:"Eligibility & dosing",C:"Bleeding & constraints",D:"Synthesis & revision"})[r]}</span><span class="robot-details">View role ${icon("chevron")}</span></button>`).join("")}</div><div class="team-process"><span>${icon("users")}Parallel assessment</span>${icon("chevron")}<span>${icon("layers")}Coordinated draft</span>${icon("chevron")}<span>${icon("refresh")}Targeted review</span></div></section>
+      <div class="dashboard-stats">${metric(runs.length,"Total runs","folder")}${metric(n("approved"),"Agent-approved","shield")}${metric(n("needs_human_review"),"Needs human review","alert")}${metric(stats.documents,"Knowledge documents","book")}</div>
+      <div class="dashboard-bottom"><section class="card recent-card"><div class="card-h"><h3>Recent recommendations</h3><a href="#/history" class="btn ghost sm">View all${icon("chevron")}</a></div>${recent}</section><section class="card library-summary"><div class="card-h"><h3>Knowledge base</h3>${icon("database")}</div><div class="card-b"><div class="library-numbers"><b>${stats.documents}<small>documents</small></b><b>${stats.chunks}<small>passages</small></b></div><div class="library-status">${icon("check")}Full-text search ready</div><a class="btn primary" href="#/knowledge" style="width:100%;margin-top:22px">${icon("book")}Open library</a></div></section></div></div>`);
     } catch (e) {
       if (route !== routeVersion) return;
       setView(`<div class="empty">${icon("alert")}<p>Unable to load the workspace.</p><button class="btn" data-action="reload">Try again</button></div>`); toast(e.message,"bad");
@@ -262,15 +262,15 @@
   /* ================= history ================= */
   async function viewHistory() {
     const route = routeVersion;
-    setView(loading(), crumb("Reviews"));
+    setView(loading(), crumb("Recommendations"));
     try { S.runs = (await api("/api/runs")).runs; } catch (e) { toast(e.message, "bad"); S.runs = []; }
     if (route !== routeVersion) return;
     const filters = [["all", "All"], ["approved", "Approved"], ["needs_human_review", "Needs human review"], ["failed", "Failed"], ["running", "Running"], ["unsigned", "Awaiting sign-off"]];
-    setView(`<div class="page-h"><div><h1 class="h1">Reviews</h1><p class="lead">Records stored in <span class="mono">${esc(S.info?.runs_dir || "runs/")}</span></p></div>
-      <a class="btn primary" href="#/new">${icon("plus")}New review</a></div>
+    setView(`<div class="page-h"><div><h1 class="h1">Recommendations</h1><p class="lead">Records stored in <span class="mono">${esc(S.info?.runs_dir || "runs/")}</span></p></div>
+      <a class="btn primary" href="#/new">${icon("plus")}New recommendation</a></div>
       <div class="card"><div class="card-h history-tools"><div class="seg">${filters.map(([k, t]) => `<button data-action="hist-f" data-f="${k}" class="${S.hist.f === k ? "on" : ""}">${t}</button>`).join("")}</div>
       <div class="row" style="width:300px;position:relative"><input class="input" data-input="hist-q" placeholder="Search case ID, question or run ID" value="${esc(S.hist.q)}"></div></div>
-      ${runTable(filterRuns(), "hist-body")}</div>`, crumb("Reviews"));
+      ${runTable(filterRuns(), "hist-body")}</div>`, crumb("Recommendations"));
   }
   function filterRuns() {
     const q = S.hist.q.trim().toLowerCase();
@@ -315,7 +315,7 @@
     out.push(n || sourced ? ["ok", `Facts entered: ${n} · Confirmed source readings: ${sourced}`] : ["bad", "Enter a verified patient fact or confirm a sourced observation"]);
     const keys = S.w.case.facts.map(([k]) => String(k).trim()).filter(Boolean);
     if (new Set(keys).size !== keys.length) out.push(["bad", "Merge duplicate fields before starting"]);
-    out.push(c.missing_information.length ? ["warn", `Missing fields: ${c.missing_information.length} (included in the review)`] : ["info", "No missing information listed"]);
+    out.push(c.missing_information.length ? ["warn", `Missing fields: ${c.missing_information.length} (included in the assessment)`] : ["info", "No missing information listed"]);
     return out;
   }
   const checkList = (items) => `<div class="check-list">${items.map(([s, t]) => `<div class="check-item ${s}">${icon(s === "ok" ? "check" : s === "bad" ? "x" : s === "warn" ? "alert" : "info")}<span>${esc(t)}</span></div>`).join("")}</div>`;
@@ -327,11 +327,11 @@
     const w = S.w;
     const steps = [["Case details", "De-identified patient facts"], ["Evidence", "Select sources"], ["Run setup", "Demo or model"]];
     const body = [stepCase, stepEvidence, stepRun][w.step]();
-    setView(`<div class="page-h"><div><h1 class="h1">New review</h1><p class="lead">Case, evidence and run configuration.</p></div>
+    setView(`<div class="page-h"><div><h1 class="h1">New recommendation</h1><p class="lead">Case, evidence and run configuration.</p></div>
       <button class="btn ghost" data-action="w-reset">${icon("refresh")}Reset</button></div>
       <div class="steps">${steps.map(([t, s], i) => `<button class="step ${i === w.step ? "on" : ""} ${i < w.step ? "done" : ""}" data-action="w-step" data-i="${i}"><span class="n">${i < w.step ? icon("check") : i + 1}</span><span><b>${t}</b><span class="s">${s}</span></span></button>`).join("")}</div>
       ${body}
-      <div class="row" style="margin-top:20px">${w.step > 0 ? `<button class="btn" data-action="w-prev">${icon("arrowLeft")}Back</button>` : ""}<span class="spacer"></span>${w.step < 2 ? `<button class="btn primary" data-action="w-next">Next${icon("chevron")}</button>` : ""}</div>`, crumb("New review"));
+      <div class="row" style="margin-top:20px">${w.step > 0 ? `<button class="btn" data-action="w-prev">${icon("arrowLeft")}Back</button>` : ""}<span class="spacer"></span>${w.step < 2 ? `<button class="btn primary" data-action="w-next">Next${icon("chevron")}</button>` : ""}</div>`, crumb("New recommendation"));
     if (w.step === 0) refreshCaseSide();
   }
   const factRow = ([k, v], i) => `<div class="kv"><input class="input" data-input="fact-k" data-i="${i}" value="${esc(k)}" placeholder="Field, e.g. CrCl"><input class="input" data-input="fact-v" data-i="${i}" value="${esc(v)}" placeholder="Value and unit"><button class="btn ghost sm" data-action="fact-del" data-i="${i}" title="Remove">${icon("x")}</button></div>`;
@@ -446,12 +446,12 @@
       <div class="grid g-2">${modeCard("demo", "flask", "brand", "Demo", "Explore the workflow without an API key")}${modeCard("llm", "cpu", "ok", "Model", "Use your configured model endpoint")}</div>
       ${w.mode === "demo" ? demo : llm}
       <div class="card"><div class="card-h"><h3>${icon("settings")}Advanced settings</h3></div><div class="card-b"><div class="grid g-4">
-        ${num("max_revisions", "Max revisions", "Maximum revisions by D", 0)}${num("concurrency", "Concurrency", "Concurrent model calls", 1)}${num("timeout", "Timeout (seconds)", "Timeout per model call", 1)}${num("top_k", "Passages per role", "Top-K passages", 1)}
+        ${num("max_revisions", "Max revisions", "Maximum revisions by D", 0)}${num("concurrency", "Concurrency", "Concurrent model calls", 1)}${num("timeout", "Timeout (seconds)", "Timeout per agent session", 1)}${num("top_k", "Passages per role", "Top-K passages", 1)}
       </div></div></div>
     </div>
     <div class="card" style="position:sticky;top:0"><div class="card-h"><h3>${icon("target")}Preflight checks</h3></div><div class="card-b">
       ${checkList(items)}
-      <button class="btn primary lg" style="width:100%;margin-top:18px" data-action="start" ${ok ? "" : "disabled"}>${icon("play")}Start review</button>
+      <button class="btn primary lg" style="width:100%;margin-top:18px" data-action="start" ${ok ? "" : "disabled"}>${icon("play")}${w.mode === "demo" ? "Run demo" : extraCase().task_type === "review_plan" ? "Review existing plan" : "Generate recommendations"}</button>
       <div class="muted small" style="margin-top:10px">Progress and results are saved locally.</div>
     </div></div></div>`;
   }
@@ -459,10 +459,10 @@
   /* ================= run detail ================= */
   async function viewRun(id, tab) {
     const route = routeVersion;
-    setView(loading(), crumb("Reviews", id));
+    setView(loading(), crumb("Recommendations", id));
     let d;
     try { d = await api(`/api/runs/${encodeURIComponent(id)}`); }
-    catch (e) { if (route !== routeVersion) return; setView(`<div class="empty">${icon("alert")}<div>${esc(e.message)}</div><a class="btn" href="#/history" style="margin-top:12px">Back to reviews</a></div>`); return; }
+    catch (e) { if (route !== routeVersion) return; setView(`<div class="empty">${icon("alert")}<div>${esc(e.message)}</div><a class="btn" href="#/history" style="margin-top:12px">Back to recommendations</a></div>`); return; }
     if (route !== routeVersion) return;
     S.run = d; S.signDecision = "";
     S.runTab = tab || (d.status === "running" ? "live" : "report");
@@ -479,11 +479,11 @@
         <h1 class="q">${esc(d.case?.question || "")}</h1>
         <div class="muted small">Case ${esc(d.case_id)} · Created ${fmtTime(d.created_at)}</div></div>
       <div class="row no-print">
-        <button class="btn" data-action="reuse-case" title="Start another review with this case">${icon("refresh")}Reuse case</button>
+        <button class="btn" data-action="reuse-case" title="Generate another recommendation with this case">${icon("refresh")}Reuse case</button>
         ${done ? `<a class="btn" href="/api/runs/${encodeURIComponent(d.id)}/report.md">${icon("download")}Report .md</a><a class="btn" href="/api/runs/${encodeURIComponent(d.id)}/result.json">${icon("code")}Data .json</a>` : ""}
         <button class="btn primary" data-action="print" ${done ? "" : "disabled"}>${icon("printer")}Print / PDF</button></div></div>
       <div class="tabs">${tabs.map(([k, ic, t]) => `<button class="${S.runTab === k ? "on" : ""}" data-action="tab" data-t="${k}">${icon(ic)}${t}</button>`).join("")}</div>
-      <div id="run-body"></div>`, crumb("Reviews", d.case_id || d.id));
+      <div id="run-body"></div>`, crumb("Recommendations", d.case_id || d.id));
     renderRunBody();
   }
   function renderRunBody() {
@@ -520,7 +520,7 @@
         S.run = d; S.evMap = Object.fromEntries((d.result?.evidence || []).map((x) => [x.id, x]));
         renderRunShell();
         const s = STATUS[d.status] || {};
-        toast(`Review complete: ${s.t || d.status}`, d.status === "approved" ? "ok" : d.status === "failed" ? "bad" : "info");
+        toast(`Run complete: ${s.t || d.status}`, d.status === "approved" ? "ok" : d.status === "failed" ? "bad" : "info");
       } catch (e) { toast(e.message, "bad"); }
     });
     const tick = setInterval(() => { if (S.runTab === "live" && S.run?.status === "running") { const g = $("#gantt"); if (g) g.innerHTML = ganttHTML(derive(S.run.events)); const c = $("#elapsed"); if (c) c.textContent = fmtSec(liveNow(derive(S.run.events))); } }, 250);
@@ -612,7 +612,7 @@
   function reportHTML(d) {
     const r = d.result;
     if (!r) {
-      if (d.status === "running") return `<div class="card"><div class="empty">${icon("activity")}<div style="font-weight:600;color:var(--text-2)">Review in progress</div><div>The report appears when the run is complete.</div><button class="btn primary" style="margin-top:14px" data-action="tab" data-t="live">${icon("activity")}View live workflow</button></div></div>`;
+      if (d.status === "running") return `<div class="card"><div class="empty">${icon("activity")}<div style="font-weight:600;color:var(--text-2)">Generating recommendations</div><div>The report appears when the run is complete.</div><button class="btn primary" style="margin-top:14px" data-action="tab" data-t="live">${icon("activity")}View live workflow</button></div></div>`;
       return `<div class="verdict bad"><div class="big-ic">${icon("x")}</div><div><h3>${d.status === "interrupted" ? "Run interrupted" : "Failed"}</h3><p>${esc(d.reason ? reasonText(d.reason) : "The service stopped before a result was produced.")}</p></div></div>`;
     }
     const v = { approved: ["ok", "check", d.signoffs.length ? "Agent review complete · physician review recorded" : "Agent review complete · awaiting physician", "The exact draft reviewed by the specialists."], needs_human_review: ["warn", "alert", "Needs human review", "Review the draft and unresolved issues below."], failed: ["bad", "x", "Failed", "The run stopped due to an error."] }[r.status] || ["bad", "x", r.status, ""];
@@ -628,18 +628,18 @@
     }).join("") : "";
     const issues = pendingRoles.flatMap((x) => (r.reviews?.[x]?.issues || []).map((i) => [x, r.reviews[x].verdict, i]));
     const last = d.signoffs.at(-1);
-    return `<div class="print-only" style="margin-bottom:14px"><h2 style="margin:0">VTE review report</h2><div class="small muted">Run ${esc(d.id)} · Case ${esc(c.case_id)} · Generated ${fmtTime(d.created_at)} · Printed ${fmtTime(new Date().toISOString())}</div><div class="hr"></div></div>
+    return `<div class="print-only" style="margin-bottom:14px"><h2 style="margin:0">VTE anticoagulation recommendation report</h2><div class="small muted">Run ${esc(d.id)} · Case ${esc(c.case_id)} · Generated ${fmtTime(d.created_at)} · Printed ${fmtTime(new Date().toISOString())}</div><div class="hr"></div></div>
     <div class="grid g-side"><div class="stack">
       <div class="verdict ${v[0]}"><div class="big-ic">${icon(v[1])}</div><div><h3>${v[2]}</h3><p>${esc(reasonText(r.reason))}.${v[3]}</p></div>
         <div class="verdict-kpis"><div><b>v${r.version}</b><span>Draft version</span></div><div><b>${r.revisions}</b><span>D revisions</span></div><div><b>${m.calls ?? "—"}</b><span>Agent sessions</span></div><div><b>${fmtSec(m.elapsed_s)}</b><span>Elapsed time</span></div></div></div>
       ${r.mode === "synthetic_demo" ? `<div class="notice warn">${icon("flask")}<div><b>Synthetic demo</b> · Workflow illustration only.</div></div>` : ""}
       ${(r.clinical_checks?.issues||[]).some(i=>i.severity==='blocking')?`<div class="card"><div class="card-h"><h3>${icon("alert")}Clinical information to resolve</h3></div><div class="card-b">${checkList(r.clinical_checks.issues.filter(i=>i.severity==='blocking').map(i=>['warn',i.roles.join('/')+': '+i.message]))}</div></div>`:""}
+      ${draft ? `<div class="plan"><div class="plan-label">${icon("target")}COORDINATED RECOMMENDATION <span class="recommendation-model">${esc(d.meta?.role_models?.D || d.meta?.model || "")}</span></div><div class="plan-text">${esc(draft.shared_plan)}</div></div>${sections}` : ""}
       <div class="card"><div class="card-h"><h3>${icon("user")}Case summary</h3><span class="chip mono">${esc(c.case_id)}</span></div><div class="card-b">
         <div style="font-weight:600;margin-bottom:10px">${esc(c.question)}</div>
         <dl class="facts">${facts.map(([k, val]) => `<dt>${esc(k)}</dt><dd>${esc(fmtVal(val))}</dd>`).join("")}</dl>
         ${(c.missing_information || []).length ? `<div style="margin-top:12px"><div class="muted small" style="margin-bottom:6px">Missing information</div><div class="row wrap">${c.missing_information.map((x) => `<span class="tag-x" style="padding-right:10px">${icon("alert")}${esc(x)}</span>`).join("")}</div></div>` : ""}
       </div></div>
-      ${draft ? `<div class="plan"><div class="plan-label">${icon("target")}SHARED PLAN</div><div class="plan-text">${esc(draft.shared_plan)}</div></div>${sections}` : ""}
       ${issues.length ? `<div class="card"><div class="card-h"><h3>${icon("alert")}Open issues</h3>${badge(`${issues.length} items`, "warn", "nodot")}</div><div class="card-b">${issues.map(([x, verdict, i]) => `<div class="issue"><div class="ih">${roleTag(x, 22)}<span class="mono">${esc(i.id)}</span>${badge(VERDICT[verdict]?.t || verdict, VERDICT[verdict]?.c || "warn")}</div><div>${esc(i.problem)}</div><div class="req"><b>Requested change: </b>${esc(i.requested_change)}</div>${i.evidence_ids?.length || i.related_roles?.length ? `<div class="row wrap" style="margin-top:8px">${evChips(i.evidence_ids)}${(i.related_roles || []).map((y) => roleTag(y, 20)).join("")}</div>` : ""}</div>`).join("")}</div></div>` : ""}
       <div class="notice">${icon("shield")}<div>Research output. Final clinical decisions require physician review.</div></div>
       <div class="print-only" style="margin-top:18px">${last ? `<div>Reviewer: <b>${esc(last.reviewer)}</b> Decision: <b>${esc(DECISION[last.decision]?.t)}</b> Time: ${fmtTime(last.signed_at)}</div>${last.comment ? `<div>Note: ${esc(last.comment)}</div>` : ""}<div class="small muted mono">Draft SHA-256: ${esc(last.draft_sha256)}</div>` : `<div style="margin-top:28px">Physician signature: ＿＿＿＿＿＿＿＿  Date: ＿＿＿＿＿＿＿＿</div>`}</div>
@@ -727,14 +727,14 @@
       <div class="field"><label>Base URL</label><input class="input" data-input="llm" data-k="base_url" value="${esc(w.llm.base_url)}" placeholder="${esc(env.base_url || "https://api.openai.com/v1")}"></div>
       <div class="field"><label>Default model</label><input class="input" data-input="llm" data-k="model" value="${esc(w.llm.model)}" placeholder="${esc(env.model || "Model identifier from your provider")}"></div>
       <div class="field wide"><label>API Key</label><input class="input" type="password" autocomplete="off" data-input="apikey" value="${esc(apiKey)}" placeholder="${env.api_key_set ? "Server credentials are available" : "Model service API key"}"><span class="hint">API key stays in memory. Endpoint and model names are saved locally.</span></div></div>
-      <div class="row wrap"><button class="btn primary" data-action="profile-save">${icon("check")}Save configuration</button><button class="btn ghost" data-action="clear-key">Clear session key</button><a class="btn ghost" href="#/new">New review${icon("chevron")}</a></div></div></section>
+      <div class="row wrap"><button class="btn primary" data-action="profile-save">${icon("check")}Save configuration</button><button class="btn ghost" data-action="clear-key">Clear session key</button><a class="btn ghost" href="#/new">New recommendation${icon("chevron")}</a></div></div></section>
       <section class="card"><div class="card-h"><h3>${icon("users")}Role assignments</h3><span class="muted small">Optional · inherits the default model</span></div><div class="card-b profile-fields">${[...ROLES,"D"].map((r) => `<div class="field"><label>${r} · ${ROLE[r].short}</label><input class="input" data-input="llm-role" data-r="${r}" value="${esc(w.llm.role_models?.[r] || "")}" placeholder="${esc(env.role_models?.[r] || "Use default model")}"></div>`).join("")}</div></section>
-      <div class="notice info">${icon("info")}<div>Choose Model mode in a new review to use this connection.</div></div></div>
+      <div class="notice info">${icon("info")}<div>Choose Model mode in a new recommendation to use this connection.</div></div></div>
       <div class="stack"><section class="card"><div class="card-h"><h3>${icon("activity")}Environment</h3></div><div class="card-b"><dl class="facts">${row("App version",`v${esc(i.version)}`)}${row("Prompt version",esc(i.prompt_version))}${row("Model adapter",i.httpx ? badge("httpx installed","ok") : badge("Not installed","warn"))}${row("Database", "SQLite + FTS5")}${row("Library", `${i.knowledge?.documents || 0} documents`)}${row("Default retrieval",`Top-${i.defaults?.top_k}`)}${row("Concurrency / revisions",`${i.defaults?.max_concurrency} concurrent / ${i.defaults?.max_revisions} max revisions`)}${row("Timeout",`${i.defaults?.call_timeout} s`)}</dl></div></section>
       <section class="card"><div class="card-h"><h3>${icon("folder")}Local storage</h3></div><div class="card-b"><p class="small muted" style="margin-top:0">Run records are stored in:</p><div class="mono" style="overflow-wrap:anywhere;font-size:11px">${esc(i.runs_dir)}</div><div class="hr"></div><p class="small muted">API keys are not stored in run records.</p><a href="#/guide" class="btn sm">Quick start${icon("chevron")}</a></div></section></div></div>`,crumb("Settings"));
   }
   function viewGuide() {
-    const steps = [["Case","Enter a de-identified case, a decision question and verified facts."],["Knowledge","Add source documents to the library. Search passages and select documents for the review."],["Run","Use the offline demo or configure a model connection in Settings."],["Collaboration","A, B and C assess independently. D combines their findings into a draft."],["Revision","Specialists review their sections. D revises issues; affected specialists review again."],["Review & export","Inspect sources and version changes, record a physician decision and export the report."]];
+    const steps = [["Case","Enter a de-identified case, a decision question and verified facts."],["Knowledge","Add source documents to the library. Search passages and select documents for the recommendation."],["Run","Use the offline demo or configure a model connection in Settings."],["Collaboration","A, B and C assess independently. D combines their findings into a draft."],["Revision","Specialists review their sections. D revises issues; affected specialists review again."],["Review & export","Inspect sources and version changes, record a physician decision and export the report."]];
     setView(`<div class="page-h"><h1 class="h1">Quick start</h1><button class="btn primary" data-action="quick-demo" data-s="targeted">${icon("play")}Run demo</button></div><div class="guide-grid">${steps.map(([title,text],n) => `<section class="card guide-step"><span class="number">0${n+1}</span><h3>${title}</h3><p>${text}</p></section>`).join("")}</div>`,crumb("Quick start"));
   }
 
@@ -754,7 +754,7 @@
     "hist-f": (el) => { S.hist.f = el.dataset.f; $$("[data-action=hist-f]").forEach((b) => b.classList.toggle("on", b === el)); $("#hist-body").innerHTML = runRows(filterRuns()); },
     tab: (el) => { S.runTab = el.dataset.t; history.replaceState(null, "", `#/run/${encodeURIComponent(S.run.id)}?tab=${S.runTab}`); $$(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.t === S.runTab)); renderRunBody(); $("#view").scrollTop = 0; },
     print: () => { if (S.runTab !== "report") { S.runTab = "report"; renderRunShell(); } setTimeout(() => window.print(), 200); },
-    "reuse-case": () => { S.w = S.w || loadWizard(); S.w.case = caseFromJSON(S.run.case || {}); S.w.sources=[];S.w.labels=[];S.w.extractionIssues=[];delete S.w.jsonDraft; S.w.jsonError = false; S.w.step = 0; S.w.caseMode = "form"; S.w.useDemoData = false; saveWizard(); location.hash = "#/new"; toast("Case loaded for a new review", "ok"); },
+    "reuse-case": () => { S.w = S.w || loadWizard(); S.w.case = caseFromJSON(S.run.case || {}); S.w.sources=[];S.w.labels=[];S.w.extractionIssues=[];delete S.w.jsonDraft; S.w.jsonError = false; S.w.step = 0; S.w.caseMode = "form"; S.w.useDemoData = false; saveWizard(); location.hash = "#/new"; toast("Case loaded for a new recommendation", "ok"); },
     decision: (el) => { S.signDecision = el.dataset.d; $$("#decisions .decision").forEach((b) => b.classList.toggle("on", b === el)); },
     sign: async (el) => {
       const reviewer = $("#sign-name").value.trim(), comment = $("#sign-comment").value.trim();
@@ -846,7 +846,7 @@
   function renderKnowledge() {
     setView(`<div class="page-h"><div><h1 class="h1">Knowledge base</h1><p class="lead">Documents: ${K.stats.documents || 0} · Indexed passages: ${K.stats.chunks || 0}</p></div><button class="btn primary" data-action="kb-add">${icon("plus")}Add document</button></div>
       <section class="card"><div class="knowledge-toolbar"><div class="knowledge-search">${icon("search")}<input class="input" aria-label="Search knowledge base" data-input="kb-q" data-key="kb-search" placeholder="Search guidelines, drugs or clinical terms" value="${esc(K.q)}"><button class="btn primary" data-action="kb-search">Search</button></div><select class="select" aria-label="Specialist filter" data-change="kb-role"><option value="">All specialists</option>${ROLES.map(r=>`<option value="${r}" ${K.role === r ? "selected" : ""}>${r} · ${ROLE[r].short}</option>`).join("")}</select></div>
-      <div class="knowledge-controls"><div class="seg"><button data-action="kb-view" data-mode="active" class="${K.archived ? "" : "on"}">Documents</button><button data-action="kb-view" data-mode="archived" class="${K.archived ? "on" : ""}">Archived</button></div><div class="row"><span id="kb-selected-count" class="muted small">${K.selected.size} selected</span><button class="btn sm" id="kb-use" data-action="kb-use" ${K.selected.size ? "" : "disabled"}>Use in review${icon("chevron")}</button></div></div>
+      <div class="knowledge-controls"><div class="seg"><button data-action="kb-view" data-mode="active" class="${K.archived ? "" : "on"}">Documents</button><button data-action="kb-view" data-mode="archived" class="${K.archived ? "on" : ""}">Archived</button></div><div class="row"><span id="kb-selected-count" class="muted small">${K.selected.size} selected</span><button class="btn sm" id="kb-use" data-action="kb-use" ${K.selected.size ? "" : "disabled"}>Use for recommendation${icon("chevron")}</button></div></div>
       <div id="kb-results">${libraryRows()}</div><div class="knowledge-foot"><span>${icon("database")}Indexed locally</span><span id="kb-result-count">${K.results ? `Matching passages: ${K.results.length}` : "Source documents stored locally"}</span></div></section>`,crumb("Knowledge base"));
   }
   async function searchKnowledge() {
@@ -911,7 +911,7 @@
       el.disabled=true;
       try { const ids=[...K.selected], data=await api("/api/knowledge/snapshot",{body:{ids}}), checked=await api("/api/validate",{body:{evidence:data.evidence}});
         if (!checked.evidence?.ok) throw new Error("Selected evidence is invalid");
-        S.w.evidence=data.evidence; S.w.evidenceName=`Knowledge base · Documents: ${ids.length}`; S.w.evidenceCheck=checked.evidence; S.w.knowledgeIds=ids; S.w.useDemoData=false; S.w.step=1; S.w.settings ||= defaultsToSettings(); saveWizard(); location.hash="#/new"; toast("Knowledge documents attached to review","ok");
+        S.w.evidence=data.evidence; S.w.evidenceName=`Knowledge base · Documents: ${ids.length}`; S.w.evidenceCheck=checked.evidence; S.w.knowledgeIds=ids; S.w.useDemoData=false; S.w.step=1; S.w.settings ||= defaultsToSettings(); saveWizard(); location.hash="#/new"; toast("Knowledge documents attached to case","ok");
       }catch(e){el.disabled=false;toast(e.message,"bad");}
     }
   });
@@ -971,7 +971,7 @@
     return `<div class="context-box"><div class="row"><b>${icon("users")}Decision context</b><a href="#/patients" class="btn ghost sm">Patient timeline${icon("chevron")}</a></div>
       <div class="grid g-2"><div class="field"><label>Patient ID</label><input class="input" data-input="patient-context" data-k="patient_id" value="${esc(p.patient_id)}" placeholder="DEID-P001"></div><div class="field"><label>Encounter ID</label><input class="input" data-input="patient-context" data-k="encounter_id" value="${esc(p.encounter_id)}" placeholder="VISIT-001"></div></div>
       <div class="field"><label>Decision time (ISO + timezone)</label><input class="input" data-input="patient-context" data-k="decision_at" value="${esc(p.decision_at)}" placeholder="2026-10-04T09:00:00+08:00"></div>
-      <div class="field"><label>Task</label><select class="select" data-change="task-type"><option value="generate_plan" ${e.task_type!=="review_plan"?"selected":""}>Generate an independent plan</option><option value="review_plan" ${e.task_type==="review_plan"?"selected":""}>Review an existing prescription</option></select></div>
+      <div class="field"><label>Task</label><select class="select" data-change="task-type"><option value="generate_plan" ${e.task_type!=="review_plan"?"selected":""}>Generate treatment recommendations</option><option value="review_plan" ${e.task_type==="review_plan"?"selected":""}>Review an existing prescription</option></select></div>
       ${e.task_type==="review_plan"?`<div class="field"><label>Plan to review (model input)</label><textarea class="textarea" data-input="candidate-plan">${esc(e.candidate_plan)}</textarea></div>`:""}
       <button class="btn sm" data-action="case-memory">${icon("clock")}Preview memory at this time</button></div>`;
   }

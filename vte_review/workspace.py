@@ -23,8 +23,12 @@ def configured_model(llm: dict, timeout: float = 120):
     roles = {r: os.environ[f"VTE_MODEL_{r}"] for r in "ABCD" if os.environ.get(f"VTE_MODEL_{r}")}
     roles.update({r: v.strip() for r, v in llm.get("role_models", {}).items() if r in "ABCD" and isinstance(v, str) and v.strip()})
     style = llm.get("api_style") or os.environ.get("VTE_API_STYLE", "chat_completions")
-    model = ChatCompletionsModel(base, key, name, role_models=roles, timeout=timeout, api_style=style)
-    return model, {"base_url": base, "model": name, "role_models": roles, "api_style": style}
+    effort = llm.get("reasoning_effort") or os.environ.get("VTE_REASONING_EFFORT") or None
+    max_tokens = llm.get("max_output_tokens", int(os.environ.get("VTE_MAX_OUTPUT_TOKENS", "3000")))
+    model = ChatCompletionsModel(base, key, name, role_models=roles, timeout=timeout, api_style=style,
+                                reasoning_effort=effort, max_tokens=max_tokens)
+    return model, {"base_url": base, "model": name, "role_models": roles, "api_style": style,
+                   "reasoning_effort": effort, "max_output_tokens": max_tokens, "responses_streaming": style == "responses"}
 
 
 def validate_labels(value):

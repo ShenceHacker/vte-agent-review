@@ -6,7 +6,7 @@
 
 1. 在 **Settings** 配置服务地址、模型与 API 协议（Chat Completions 或 Responses）。模型需要支持 JSON 输出、function calling；处理图片还需支持视觉输入。密钥仅在页面/服务运行内存中使用，不保存到数据库或运行日志。
 2. 在 **Patients** 输入脱敏患者 ID，保存已有病史、偏好、医生决策或实际用药记录。每条记录填写临床发生时间、信息可获得时间、来源、记录者；医生决策还必须填写就诊 ID。
-3. 在 **New review → Case details** 填写患者 ID、就诊 ID、决策时点和任务类型。可点 **Clinical example** 查看完全虚构的结构化示例，或导入 JSON。
+3. 在 **New recommendation → Case details** 填写患者 ID、就诊 ID、决策时点和任务类型。可点 **Clinical example** 查看完全虚构的结构化示例，或导入 JSON。
 4. 在 **Source documents & images** 上传 DOCX、PNG、JPEG、WebP、TXT、MD。填写整份资料的可获得时间及核对人；如果整份资料包含决策后事件或待留出的医生方案，先在本地拆分/遮去这些部分，再附到本次评估。
 5. **Extract with model** 把选中文本/图片送到配置的模型服务，提取数值、单位、日期及位置。所有模型读数自动标为 `unverified`；逐项核对原图、补全日期和单位，再改为 `confirmed`，不用于本次评估的行设为 `excluded`。截断/模糊值保持未知，不能猜测；本版本读取报告和处方截图，不解释原始 CT 影像。
 6. **Check clinical data** 显示缺项、矛盾与计算结果。来自未来的记录、未确认读数、事实/来源冲突会阻止进入模型评估；其他关键缺项允许生成供医生查看的条件性草案，但不能得到通过状态。普通非关键缺项不阻止工作流。
