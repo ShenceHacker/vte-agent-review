@@ -8,7 +8,7 @@ from datetime import datetime
 
 from .patient_memory import instant
 
-RULE_VERSION = "2026-10-04.v1"
+RULE_VERSION = "2026-10-04.v2"
 CG_SOURCE = "https://www.kidney.org/professionals/kdoqi/cockcroft-gault-equation-estimating-creatinine-clearance"
 RIVA_SOURCE = "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=7e9ab975-db2f-423c-a089-bc5a73313609"
 NICE_SOURCE = "https://www.nice.org.uk/guidance/ng158/chapter/Recommendations"
@@ -133,17 +133,20 @@ def check_regimen(drug: str, indication: str, stage: str, dose_mg, frequency_per
 
 
 def known(value) -> bool:
-    if value is None or (isinstance(value, str) and value.strip().lower() in {"", "unknown", "not recorded", "未知", "未记录", "未提供"}):
+    if value is None or (isinstance(value, str) and value.strip().lower() in {"", "null", "unknown", "not recorded", "未知", "未记录", "未提供"}):
         return False
     return not (isinstance(value, dict) and not value)
 
 
 def clinical_check(case: dict) -> dict:
-    facts = {ALIASES.get(k.lower(), k): v for k, v in case["facts"].items()}
+    from .information import resolved_facts
+    facts, response_conflicts = resolved_facts(case)
     issues, observations = [], [o for o in case.get("observations", []) if o["status"] != "excluded"]
     decision = case.get("patient", {}).get("decision_at")
     def issue(code, text, roles="D", severity="warning"):
         issues.append({"code": code, "message": text, "roles": list(roles), "severity": severity})
+    for key in response_conflicts:
+        issue("response_conflict_" + key, f"Clinician response for {key} conflicts with an existing fact; reconcile the source fact", "D", "blocking")
     if not decision:
         issue("decision_time", "Specify the decision time with timezone", "D", "blocking")
     groups = {}
@@ -177,7 +180,7 @@ def clinical_check(case: dict) -> dict:
         present = known(facts.get(key))
         checks.append({"key": key, "label": label, "roles": list(roles), "critical": critical, "present": present})
         if not present:
-            issue("missing_" + key, label + " is missing or unknown", roles, "blocking" if critical else "warning")
+            issue("missing_" + key, label + " is not recorded; state a condition if this changes the recommendation", roles, "condition" if critical else "optional")
     if facts.get("active_bleeding") is True:
         issue("active_bleeding", "Active bleeding requires clinician-led assessment before routine anticoagulation planning", "BC", "blocking")
     elif known(facts.get("active_bleeding")) and type(facts["active_bleeding"]) is not bool:
@@ -208,7 +211,7 @@ def clinical_check(case: dict) -> dict:
         item = facts.get(key)
         if known(item):
             if not isinstance(item, dict) or not all(known(item.get(k)) for k in ("value", "unit", "observed_at")):
-                issue("lab_metadata_" + key, key + " requires numeric value, unit and observed_at", "BC", "blocking")
+                issue("lab_metadata_" + key, key + " has incomplete measurement/date metadata; use only as explicitly dated or undated evidence", "BC", "condition")
             else:
                 try:
                     number(item["value"], key)
@@ -239,6 +242,8 @@ def clinical_check(case: dict) -> dict:
             issue("future_source", "Source " + source_id + " was not available at the decision time", "D", "blocking")
     data_errors = {"decision_time", "conflicting_observations", "fact_source_conflict", "unverified_observation"}
     return {"rule_version": RULE_VERSION, "checklist": checks, "issues": issues, "calculations": calculations,
-            "input_blocked": any(i["code"] in data_errors or i["code"].startswith("future_") for i in issues),
+            "input_blocked": any(i["code"] in data_errors or i["code"].startswith(("future_", "response_conflict_")) for i in issues),
             "normalized_facts": facts, "blocking": any(i["severity"] == "blocking" for i in issues),
+            "conditional": any(i["severity"] == "condition" for i in issues),
+            "missing_policy": "Unprovided routine information is optional and non-blocking. Decision-dependent gaps become explicit assumptions; absence requires clinician confirmation.",
             "scope": "Deterministic core checks plus specialist review; not an exhaustive clinical rule system", "source": NICE_SOURCE}

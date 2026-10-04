@@ -47,12 +47,15 @@ def citations(value: Any, evidence_ids: set[str], label: str) -> None:
 
 def validate_case(value: Any) -> dict:
     required = {"case_id", "question", "facts", "missing_information"}
-    optional = {"patient", "task_type", "candidate_plan", "observations", "source_ids", "source_context"}
+    optional = {"patient", "task_type", "candidate_plan", "observations", "source_ids", "source_context", "information_responses"}
     if not isinstance(value, dict) or not required <= set(value) or set(value) - required - optional:
         raise ContractError("case: expected core fields and supported patient/source fields; keep research labels separate")
     text(value["case_id"], "case_id")
     text(value["question"], "question")
-    if not isinstance(value["facts"], dict) or (not value["facts"] and not value.get("observations")):
+    responses = value.get("information_responses", [])
+    has_response_facts = isinstance(responses, list) and any(isinstance(r, dict) and r.get("status") in {"provided", "absent"} for r in responses)
+    if not isinstance(value["facts"], dict) or (not value["facts"] and not value.get("observations")
+            and not has_response_facts):
         raise ContractError("facts: expected nonempty object")
     strings(value["missing_information"], "missing_information")
     from .patient_memory import identifier, instant
@@ -97,6 +100,8 @@ def validate_case(value: Any) -> dict:
                     raise ContractError("Observation availability cannot precede its clinical date")
         import json
         json.dumps(value, allow_nan=False)
+        from .information import validate_responses
+        validate_responses(value.get("information_responses", []))
     except (ValueError, TypeError) as exc:
         raise ContractError(str(exc)) from None
     return deepcopy(value)
@@ -111,7 +116,8 @@ def validate_assessment(value: Any, evidence_ids: set[str]) -> dict:
 
 
 def validate_draft(value: Any, evidence_ids: set[str]) -> dict:
-    object_fields(value, {"shared_plan", "sections"}, "draft")
+    if not isinstance(value, dict) or not {"shared_plan", "sections"} <= set(value) or set(value) - {"shared_plan", "sections", "assumptions", "information_requests"}:
+        raise ContractError("draft: expected shared_plan, sections, and optional assumptions/information_requests")
     text(value["shared_plan"], "shared_plan")
     object_fields(value["sections"], set(ROLES), "sections")
     for role, section in value["sections"].items():
@@ -119,18 +125,32 @@ def validate_draft(value: Any, evidence_ids: set[str]) -> dict:
         text(section["text"], f"section {role} text")
         citations(section["evidence_ids"], evidence_ids, f"section {role} evidence_ids")
         strings(section["depends_on"], "depends_on", set(ROLES) - {role})
+    for field, required in (("assumptions", {"id", "condition", "if_not_met", "roles"}),
+                            ("information_requests", {"id", "question", "impact", "roles"})):
+        rows = value.get(field, [])
+        if not isinstance(rows, list) or len(rows) > 40:
+            raise ContractError(field + ": expected at most 40 items")
+        for row in rows:
+            object_fields(row, required, field)
+            for key in required - {"roles"}:
+                text(row[key], field + " " + key)
+            strings(row["roles"], field + " roles", set(ROLES))
+            if not row["roles"]:
+                raise ContractError(field + ": specify affected specialists")
+        if len({r["id"] for r in rows}) != len(rows):
+            raise ContractError(field + ": duplicate IDs")
     return deepcopy(value)
 
 
 def validate_review(value: Any, evidence_ids: set[str]) -> dict:
     object_fields(value, {"verdict", "issues", "note"}, "review")
-    if value["verdict"] not in ("approve", "revise", "needs_information"):
+    if value["verdict"] not in ("approve", "approve_conditional", "revise", "needs_information"):
         raise ContractError("review verdict: unknown value")
     text(value["note"], "review note")
     if not isinstance(value["issues"], list):
         raise ContractError("issues: expected list")
-    if (value["verdict"] == "approve") != (len(value["issues"]) == 0):
-        raise ContractError("approve must have no issues; other verdicts must have issues")
+    if (value["verdict"] in {"approve", "approve_conditional"}) != (len(value["issues"]) == 0):
+        raise ContractError("Approval must have no unresolved drafting issues; other verdicts must have issues")
     for issue in value["issues"]:
         object_fields(issue, {"id", "problem", "requested_change", "evidence_ids", "related_roles"}, "issue")
         for key in ("id", "problem", "requested_change"):
@@ -164,7 +184,8 @@ def dependencies(draft: dict, role: str) -> set[str]:
 
 
 def affected_roles(old: dict, new: dict, declared: list[str]) -> set[str]:
-    if old["shared_plan"] != new["shared_plan"]:
+    if (old["shared_plan"] != new["shared_plan"] or old.get("assumptions", []) != new.get("assumptions", [])
+            or old.get("information_requests", []) != new.get("information_requests", [])):
         return set(ROLES)
     changed = {r for r in ROLES if old["sections"][r] != new["sections"][r]}
     affected = changed | set(declared)

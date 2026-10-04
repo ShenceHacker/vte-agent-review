@@ -97,17 +97,18 @@ class ClinicalTests(unittest.TestCase):
         self.assertTrue(any(i["code"] == "missing_patient_constraints" for i in result["issues"]))
         self.assertFalse(result["blocking"])
 
-    def test_critical_missing_blocks_final_but_not_all_assessments(self):
+    def test_critical_missing_becomes_condition_not_stop(self):
         data = case(); del data["facts"]["serum_creatinine"]
         result = clinical_check(data)
-        self.assertTrue(result["blocking"])
+        self.assertTrue(result["conditional"])
+        self.assertFalse(result["blocking"])
         self.assertFalse(result["input_blocked"])
 
     def test_future_labs_and_bad_units_not_calculated(self):
         for updates in ({"observed_at": LATER}, {"unit": "unknown"}):
             data = case(); data["facts"]["serum_creatinine"].update(updates)
             result = clinical_check(data)
-            self.assertTrue(result["blocking"])
+            self.assertTrue(result["blocking"] or result["conditional"])
             self.assertFalse(result["calculations"])
 
     def test_unstable_renal_and_ambiguous_bleeding_status_gate(self):
@@ -259,7 +260,7 @@ class IntegratedWorkflowTests(unittest.IsolatedAsyncioTestCase):
     async def test_missing_labs_not_false_approval_and_other_assessments_run(self):
         data=case(); del data["facts"]["serum_creatinine"]
         result=await Workflow(DemoModel(delay=0),EvidenceIndex(DEMO_EVIDENCE)).run(data)
-        self.assertEqual(result["reason"],"clinical_data_requires_review")
+        self.assertEqual(result["reason"],"conditional_assumptions_missing")
         self.assertIsNotNone(result["draft"]); self.assertIsNone(result["final"])
 
     async def test_future_source_stops_before_model(self):

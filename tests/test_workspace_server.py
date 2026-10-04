@@ -77,3 +77,23 @@ class WorkspaceServerTests(unittest.TestCase):
         self.assertEqual(err.exception.code,400)
         with self.assertRaises(HTTPError):
             self.request("/api/patients/P1/snapshot",{"as_of":"yesterday"})
+
+    def test_information_api_and_followup_preserve_original(self):
+        from tests.test_conditional_information import response
+        c=case();c['facts']['active_bleeding']=None
+        parent=self.request('/api/runs',{'mode':'demo','pace':0,'case':c,'evidence':DEMO_EVIDENCE})['id']
+        old=self.completed(parent)
+        self.assertEqual(len(old['information_followup']['table']),22)
+        saved=self.request('/api/runs/'+parent+'/information',{'responses':[response()]})
+        self.assertTrue(saved['original_report_unchanged'])
+        self.assertEqual(self.request('/api/runs/'+parent)['result'],old['result'])
+        evidence=self.request('/api/runs/'+parent+'/evidence.json')
+        child=self.request('/api/runs',{'mode':'demo','pace':0,'case':saved['case'],'evidence':evidence,'parent_run_id':parent})['id']
+        result=self.completed(child)
+        self.assertEqual(result['meta']['parent_run_id'],parent)
+        self.assertIs(result['result']['clinical_checks']['normalized_facts']['active_bleeding'],False)
+        self.assertIsNone(result['case']['facts']['active_bleeding'])
+        self.assertIsNone(self.request('/api/runs/'+parent)['case']['facts']['active_bleeding'])
+        with self.assertRaises(HTTPError):
+            self.request('/api/runs/'+parent+'/information',{'responses':[{**response(),'field':'serum_creatinine'}]})
+        self.assertEqual(len(self.request('/api/runs/'+parent)['information_followup']['history']),1)

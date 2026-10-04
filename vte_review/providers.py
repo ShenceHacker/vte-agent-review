@@ -58,7 +58,7 @@ class ChatCompletionsModel:
         self.client = httpx.AsyncClient(
             base_url=base_url.rstrip("/") + "/",
             headers={"Authorization": "Bearer " + api_key,
-                     "User-Agent": "VTE-Anticoagulation-Assistant/0.4.0"},
+                     "User-Agent": "VTE-Anticoagulation-Assistant/0.5.0"},
             timeout=timeout, transport=transport if transport is not None else httpx.AsyncHTTPTransport(retries=2),
             follow_redirects=False,
         )

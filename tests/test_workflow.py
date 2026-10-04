@@ -48,10 +48,10 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["reason"], "revision_limit")
         self.assertEqual(self.rounds(result), [["A", "B", "C"]])
 
-    async def test_missing_information_does_not_loop(self):
+    async def test_unresolved_information_gets_bounded_revision_attempts(self):
         result = await self.run_case("missing")
-        self.assertEqual(result["reason"], "missing_information")
-        self.assertEqual(result["revisions"], 0)
+        self.assertEqual(result["reason"], "revision_limit")
+        self.assertEqual(result["revisions"], 3)
         self.assertIsNone(result["final"])
 
     async def test_no_change_ends_loop(self):

@@ -54,12 +54,12 @@
     D: { name: "Synthesis & targeted revision", short: "Coordinator" },
   };
   const STATUS = {
-    approved: { t: "Approved", c: "ok" }, needs_human_review: { t: "Needs human review", c: "warn" },
+    approved: { t: "Approved", c: "ok" }, conditional: { t: "Conditional recommendation", c: "info" }, needs_human_review: { t: "Needs human review", c: "warn" },
     failed: { t: "Failed", c: "bad" }, running: { t: "Running", c: "run" }, interrupted: { t: "Interrupted", c: "gray" },
   };
   const TASK = { assess: "Assessment", synthesize: "Synthesize", review: "Review", revise: "Targeted revision" };
   const TASK_SHORT = { assess: "Assess", synthesize: "Synthesis", review: "Review", revise: "Revise" };
-  const VERDICT = { approve: { t: "Approved", c: "ok" }, revise: { t: "Revise", c: "warn" }, needs_information: { t: "Missing information", c: "bad" } };
+  const VERDICT = { approve_conditional: { t: "Reviewed with conditions", c: "info" }, approve: { t: "Approved", c: "ok" }, revise: { t: "Revise", c: "warn" }, needs_information: { t: "Missing information", c: "bad" } };
   const DECISION = { accept: { t: "Accept", c: "ok", i: "check" }, accept_with_changes: { t: "Accept with changes", c: "warn", i: "pen" }, reject: { t: "Reject", c: "bad", i: "x" } };
   const QUICK = ["Age", "Sex", "Weight", "VTE type & site", "Diagnosis date", "Serum creatinine", "eGFR / CrCl", "Platelets", "Liver function", "Bleeding history", "Concomitant medication", "Pregnancy / lactation", "Active cancer", "Planned surgery"];
 
@@ -88,6 +88,8 @@
     if (!r) return "";
     const map = {
       all_required_reviews_passed: "All specialists approved the current draft",
+      conditional_recommendation_ready: "Recommendation reviewed under explicit conditions; information follow-up is separate",
+      conditional_assumptions_missing: "Draft available; explicit assumptions still require revision",
       missing_information: "Additional patient data or evidence is required",
       revision_limit: "Revision limit reached with unresolved issues",
       no_change_after_revision: "No changes were made; the review loop stopped",
@@ -166,8 +168,8 @@
         else if (e.task === "review") {
           const v = e.output?.verdict;
           const n = e.output?.issues?.length || 0;
-          st.approvals[e.role] = v === "approve" ? e.version : null;
-          Object.assign(a, { state: v === "approve" ? "ok" : v === "revise" ? "warn" : "bad", label: v === "approve" ? `v${e.version} Approved` : v === "revise" ? `v${e.version} Revise · ${n} issues` : `Missing information · ${n} issues`, note: e.output?.note || "" });
+          st.approvals[e.role] = ["approve","approve_conditional"].includes(v) ? e.version : null;
+          Object.assign(a, { state: ["approve","approve_conditional"].includes(v) ? "ok" : v === "revise" ? "warn" : "bad", label: v === "approve_conditional" ? `v${e.version} With conditions` : v === "approve" ? `v${e.version} Approved` : v === "revise" ? `v${e.version} Revise · ${n} issues` : `Missing information · ${n} issues`, note: e.output?.note || "" });
         } else Object.assign(a, { state: "ok", label: e.task === "revise" ? "Revision complete" : "Draft created", note: e.output?.reason || "" });
       } else if (e.event === "draft_created") {
         st.version = e.version; st.drafts.push({ version: e.version, draft: e.draft, reason: "", roles: [...ROLES], initial: true });
@@ -184,7 +186,7 @@
         st.finished = e;
         const last = st.phases[st.phases.length - 1];
         if (last && last.state === "active") last.state = e.status === "failed" ? "fail" : "done";
-        st.phases.push({ label: e.status === "approved" ? "Approved" : e.status === "failed" ? "Failed" : "Human review", sub: "", state: e.status === "approved" ? "done" : e.status === "failed" ? "fail" : "stop" });
+        st.phases.push({ label: e.status === "conditional" ? "Conditional recommendation" : e.status === "approved" ? "Approved" : e.status === "failed" ? "Failed" : "Human review", sub: "", state: ["approved","conditional"].includes(e.status) ? "done" : e.status === "failed" ? "fail" : "stop" });
         if (st.agents.D.state === "idle" || st.agents.D.state === "working") st.agents.D = { state: e.status === "failed" ? "bad" : "ok", label: STATUS[e.status]?.t || e.status, note: "" };
       }
     }
@@ -234,7 +236,7 @@
       <td>${statusBadge(r.status)}</td>
       <td>${r.mode === "llm" ? `<span class="chip">${icon("cpu")}${esc(r.model || "LLM")}</span>` : `<span class="chip">${icon("flask")}Demo${r.scenario ? " · " + esc(S.info?.scenarios?.[r.scenario]?.title || r.scenario) : ""}</span>`}</td>
       <td>${r.version != null ? `v${r.version} · Revisions ${r.revisions ?? 0}` : "—"}</td>
-      <td>${r.signoff ? badge(DECISION[r.signoff.decision]?.t || r.signoff.decision, DECISION[r.signoff.decision]?.c || "gray") + `<div class="muted small">${esc(r.signoff.reviewer)}</div>` : r.status === "approved" || r.status === "needs_human_review" ? badge("Awaiting sign-off", "gray") : "—"}</td>
+      <td>${r.signoff ? badge(DECISION[r.signoff.decision]?.t || r.signoff.decision, DECISION[r.signoff.decision]?.c || "gray") + `<div class="muted small">${esc(r.signoff.reviewer)}</div>` : ["approved","conditional","needs_human_review"].includes(r.status) ? badge("Awaiting sign-off", "gray") : "—"}</td>
       <td class="muted small" style="white-space:nowrap">${fmtTime(r.created_at)}</td></tr>`).join("");
   }
   const runTable = (runs, id = "") => `<div class="table-wrap"><table class="table"><thead><tr><th>Case / Question</th><th>Status</th><th>Mode</th><th>Version</th><th>Physician review</th><th>Date</th></tr></thead><tbody ${id ? `id="${id}"` : ""}>${runRows(runs)}</tbody></table></div>`;
@@ -265,7 +267,7 @@
     setView(loading(), crumb("Recommendations"));
     try { S.runs = (await api("/api/runs")).runs; } catch (e) { toast(e.message, "bad"); S.runs = []; }
     if (route !== routeVersion) return;
-    const filters = [["all", "All"], ["approved", "Approved"], ["needs_human_review", "Needs human review"], ["failed", "Failed"], ["running", "Running"], ["unsigned", "Awaiting sign-off"]];
+    const filters = [["all", "All"], ["approved", "Approved"], ["conditional", "Conditional"], ["needs_human_review", "Needs human review"], ["failed", "Failed"], ["running", "Running"], ["unsigned", "Awaiting sign-off"]];
     setView(`<div class="page-h"><div><h1 class="h1">Recommendations</h1><p class="lead">Records stored in <span class="mono">${esc(S.info?.runs_dir || "runs/")}</span></p></div>
       <a class="btn primary" href="#/new">${icon("plus")}New recommendation</a></div>
       <div class="card"><div class="card-h history-tools"><div class="seg">${filters.map(([k, t]) => `<button data-action="hist-f" data-f="${k}" class="${S.hist.f === k ? "on" : ""}">${t}</button>`).join("")}</div>
@@ -275,7 +277,7 @@
   function filterRuns() {
     const q = S.hist.q.trim().toLowerCase();
     return S.runs.filter((r) => {
-      if (S.hist.f === "unsigned") { if (!(r.status === "approved" || r.status === "needs_human_review") || r.signoff) return false; }
+      if (S.hist.f === "unsigned") { if (!(["approved","conditional","needs_human_review"].includes(r.status)) || r.signoff) return false; }
       else if (S.hist.f !== "all" && r.status !== S.hist.f) return false;
       return !q || [r.id, r.case_id, r.question].some((x) => String(x || "").toLowerCase().includes(q));
     });
@@ -290,12 +292,13 @@
   function caseFromJSON(o) {
     if (!o || typeof o !== "object" || Array.isArray(o) || typeof o.case_id !== "string" || typeof o.question !== "string" || !o.facts || typeof o.facts !== "object" || Array.isArray(o.facts) || !Array.isArray(o.missing_information) || o.missing_information.some((v) => typeof v !== "string")) throw new Error("Expected case_id, question, a facts object and a missing_information string array");
     const facts = Object.entries(o.facts || {}).map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)]);
-    const extra = Object.fromEntries(["patient","task_type","candidate_plan","observations","source_ids","source_context"].filter(k=>k in o).map(k=>[k,o[k]]));
+    const extra = Object.fromEntries(["patient","task_type","candidate_plan","observations","source_ids","source_context","information_responses"].filter(k=>k in o).map(k=>[k,o[k]]));
     return { case_id: String(o.case_id || ""), question: String(o.question || ""), facts: facts.length ? facts : [["", ""]], missing: [...new Set((o.missing_information || []).map(String))], extra };
   }
   function parseVal(v) {
     const t = String(v).trim();
     if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t);
+    if (t === "null") return null;
     if (t === "true" || t === "false") return t === "true";
     if (/^[[{]/.test(t)) { try { return JSON.parse(t); } catch { /* keep string */ } }
     return t;
@@ -310,7 +313,7 @@
     if (S.w.jsonError) out.push(["bad", "Fix the case JSON before starting"]);
     out.push(c.case_id ? ["ok", `Case ID: ${c.case_id}`] : ["bad", "Enter a de-identified case ID"]);
     out.push(c.question ? ["ok", "Decision question provided"] : ["bad", "Enter a decision question"]);
-    const n = Object.keys(c.facts).length;
+    const n = Object.keys(c.facts).length + (c.information_responses||[]).filter(r=>["provided","absent"].includes(r.status)).length;
     const sourced = (c.observations||[]).filter(o=>o.status==='confirmed').length;
     out.push(n || sourced ? ["ok", `Facts entered: ${n} · Confirmed source readings: ${sourced}`] : ["bad", "Enter a verified patient fact or confirm a sourced observation"]);
     const keys = S.w.case.facts.map(([k]) => String(k).trim()).filter(Boolean);
@@ -350,7 +353,7 @@
         <div class="tags-input">${c.missing.map((m, i) => `<span class="tag-x">${esc(m)}<button data-action="miss-del" data-i="${i}" title="Remove">${icon("x")}</button></span>`).join("")}<input data-key="miss-add" placeholder="Add missing information, then press Enter"></div></div>`;
     const json = `<textarea class="textarea code" data-input="case-json" spellcheck="false">${esc(w.jsonError ? w.jsonDraft : JSON.stringify(buildCase(), null, 2))}</textarea><div id="json-err" class="small muted" style="margin-top:6px">Valid JSON syncs to the form.</div>`;
     return `<div class="grid g-side">
-      <div class="card"><div class="card-h"><h3>${icon("file")}Case details</h3>
+      <div class="card"><div class="card-h"><h3>${icon("file")}Case details</h3><button class="btn sm" data-action="information-new">${icon("file")}Information checklist · 资料表</button>
         <div class="row"><div class="seg"><button data-action="case-mode" data-m="form" class="${w.caseMode === "form" ? "on" : ""}">${icon("pen")}Form</button><button data-action="case-mode" data-m="json" class="${w.caseMode === "json" ? "on" : ""}">${icon("code")}JSON</button></div></div></div>
         <div class="card-b">${w.caseMode === "form" ? form : json}</div>
         <div class="card-h" style="border-top:1px solid var(--line-2);border-bottom:0">
@@ -542,7 +545,7 @@
     const rows = [...ROLES, "D"].map((r) => `<div class="g-row"><div class="g-l">${roleTag(r, 20)}${r === "D" ? "Coord." : "Agent"}</div><div class="g-track">
       ${st.calls.filter((c) => c.role === r).map((c) => {
         const end = c.end ?? now, left = (c.start / total) * 100, width = Math.max(((end - c.start) / total) * 100, 0.8);
-        const mark = c.task === "review" && c.output ? (c.output.verdict === "approve" ? " ✓" : " ✗") : "";
+        const mark = c.task === "review" && c.output ? (c.output.verdict === "approve_conditional" ? " ✓ (conditional)" : c.output.verdict === "approve" ? " ✓" : " ✗") : "";
         return `<div class="g-bar ${c.status === "running" ? "running" : ""}" style="left:${left}%;width:${width}%;background-color:${c.status === "failed" ? "var(--bad)" : `var(--${r})`}" title="${esc(TASK[c.task])}${c.version ? ` v${c.version}` : ""} · ${(end - c.start).toFixed(2)} s">${esc(TASK_SHORT[c.task] || c.task)}${c.version ? ` v${c.version}` : ""}${mark}</div>`;
       }).join("")}</div></div>`).join("");
     return `${rows}<div class="g-axis"><div></div><div>${[0, .25, .5, .75, 1].map((f) => `<span>${(total * f).toFixed(1)}s</span>`).join("")}</div></div>`;
@@ -558,7 +561,7 @@
         if (e.task === "assess") return [`var(--${e.role})`, `${R(e.role)} completed assessment`, e.output?.summary];
         if (e.task === "synthesize") return ["var(--D)", `${R("D")} created a draft`, ""];
         if (e.task === "revise") return ["var(--D)", `${R("D")} completed revision`, e.output?.reason];
-        if (e.task === "review") { const v = VERDICT[e.output?.verdict] || {}; return [v.c === "ok" ? "var(--ok)" : v.c === "warn" ? "var(--warn)" : "var(--bad)", `${R(e.role)} Review v${e.version}: ${v.t || e.output?.verdict}`, [e.output?.note, ...(e.output?.issues || []).map((i) => `[${i.id}] ${i.problem}`)].filter(Boolean).join(" ")]; }
+        if (e.task === "review") { const v = VERDICT[e.output?.verdict] || {}; return [v.c === "ok" ? "var(--ok)" : v.c === "info" ? "var(--brand)" : v.c === "warn" ? "var(--warn)" : "var(--bad)", `${R(e.role)} Review v${e.version}: ${v.t || e.output?.verdict}`, [e.output?.note, ...(e.output?.issues || []).map((i) => `[${i.id}] ${i.problem}`)].filter(Boolean).join(" ")]; }
         return null;
       case "call_failed": return ["var(--bad)", `${R(e.role)} ${TASK[e.task] || e.task}Failed`, e.error];
       case "draft_created": return ["var(--D)", `Draft created <b>v${e.version}</b>`, "A / B / C review in parallel"];
@@ -615,14 +618,14 @@
       if (d.status === "running") return `<div class="card"><div class="empty">${icon("activity")}<div style="font-weight:600;color:var(--text-2)">Generating recommendations</div><div>The report appears when the run is complete.</div><button class="btn primary" style="margin-top:14px" data-action="tab" data-t="live">${icon("activity")}View live workflow</button></div></div>`;
       return `<div class="verdict bad"><div class="big-ic">${icon("x")}</div><div><h3>${d.status === "interrupted" ? "Run interrupted" : "Failed"}</h3><p>${esc(d.reason ? reasonText(d.reason) : "The service stopped before a result was produced.")}</p></div></div>`;
     }
-    const v = { approved: ["ok", "check", d.signoffs.length ? "Agent review complete · physician review recorded" : "Agent review complete · awaiting physician", "The exact draft reviewed by the specialists."], needs_human_review: ["warn", "alert", "Needs human review", "Review the draft and unresolved issues below."], failed: ["bad", "x", "Failed", "The run stopped due to an error."] }[r.status] || ["bad", "x", r.status, ""];
+    const v = { conditional: ["info", "check", "Conditional recommendation ready", "Apply the stated assumptions and alternatives; follow-up information is tracked separately."], approved: ["ok", "check", d.signoffs.length ? "Agent review complete · physician review recorded" : "Agent review complete · awaiting physician", "The exact draft reviewed by the specialists."], needs_human_review: ["warn", "alert", "Needs human review", "Review the draft and unresolved issues below."], failed: ["bad", "x", "Failed", "The run stopped due to an error."] }[r.status] || ["bad", "x", r.status, ""];
     const draft = r.draft, c = d.case || {};
     const m = r.metrics || {};
     const pendingRoles = ROLES.filter((x) => r.approvals?.[x] == null);
     const facts = Object.entries(r.clinical_checks?.normalized_facts || c.facts || {});
     const sections = draft ? ROLES.map((x) => {
       const s = draft.sections[x], ap = r.approvals?.[x], rev = r.reviews?.[x];
-      return `<div class="section-card ${x}"><div class="sh">${roleTag(x, 32)}<div style="flex:1"><div class="name">Agent ${x} · ${ROLE[x].name}</div><div class="sub">${ROLE[x].short} section</div></div>${ap != null ? badge(`v${ap} Approved`, "ok") : badge(VERDICT[rev?.verdict]?.t || "Not approved", rev?.verdict === "needs_information" ? "bad" : "warn")}</div>
+      return `<div class="section-card ${x}"><div class="sh">${roleTag(x, 32)}<div style="flex:1"><div class="name">Agent ${x} · ${ROLE[x].name}</div><div class="sub">${ROLE[x].short} section</div></div>${ap != null ? badge(`v${ap} ${rev?.verdict === "approve_conditional" ? "With conditions" : "Approved"}`, rev?.verdict === "approve_conditional" ? "info" : "ok") : badge(VERDICT[rev?.verdict]?.t || "Not approved", rev?.verdict === "needs_information" ? "bad" : "warn")}</div>
         <div class="sb"><div class="stext">${esc(s.text)}</div>${rev?.note ? `<div class="row muted small" style="margin-top:12px;align-items:flex-start">${icon("message")}<span>Review note: ${esc(rev.note)}</span></div>` : ""}</div>
         <div class="sf"><span>Cited evidence</span>${evChips(s.evidence_ids)}${s.depends_on?.length ? `<span style="margin-left:10px">Dependencies</span>${s.depends_on.map((y) => roleTag(y, 20)).join("")}` : ""}</div></div>`;
     }).join("") : "";
@@ -630,11 +633,11 @@
     const last = d.signoffs.at(-1);
     return `<div class="print-only" style="margin-bottom:14px"><h2 style="margin:0">VTE anticoagulation recommendation report</h2><div class="small muted">Run ${esc(d.id)} · Case ${esc(c.case_id)} · Generated ${fmtTime(d.created_at)} · Printed ${fmtTime(new Date().toISOString())}</div><div class="hr"></div></div>
     <div class="grid g-side"><div class="stack">
-      <div class="verdict ${v[0]}"><div class="big-ic">${icon(v[1])}</div><div><h3>${v[2]}</h3><p>${esc(reasonText(r.reason))}.${v[3]}</p></div>
+      <div class="verdict ${v[0]}"><div class="big-ic">${icon(v[1])}</div><div><h3>${v[2]}</h3><p>${esc(reasonText(r.reason))}. ${v[3]}</p></div>
         <div class="verdict-kpis"><div><b>v${r.version}</b><span>Draft version</span></div><div><b>${r.revisions}</b><span>D revisions</span></div><div><b>${m.calls ?? "—"}</b><span>Agent sessions</span></div><div><b>${fmtSec(m.elapsed_s)}</b><span>Elapsed time</span></div></div></div>
       ${r.mode === "synthetic_demo" ? `<div class="notice warn">${icon("flask")}<div><b>Synthetic demo</b> · Workflow illustration only.</div></div>` : ""}
-      ${(r.clinical_checks?.issues||[]).some(i=>i.severity==='blocking')?`<div class="card"><div class="card-h"><h3>${icon("alert")}Clinical information to resolve</h3></div><div class="card-b">${checkList(r.clinical_checks.issues.filter(i=>i.severity==='blocking').map(i=>['warn',i.roles.join('/')+': '+i.message]))}</div></div>`:""}
-      ${draft ? `<div class="plan"><div class="plan-label">${icon("target")}COORDINATED RECOMMENDATION <span class="recommendation-model">${esc(d.meta?.role_models?.D || d.meta?.model || "")}</span></div><div class="plan-text">${esc(draft.shared_plan)}</div></div>${sections}` : ""}
+      ${informationSummaryHTML(d)}
+      ${draft ? `<div class="plan"><div class="plan-label">${icon("target")}COORDINATED RECOMMENDATION <span class="recommendation-model">${esc(d.meta?.role_models?.D || d.meta?.model || "")}</span></div><div class="plan-text">${esc(draft.shared_plan)}</div></div>${assumptionsHTML(draft)}${sections}` : ""}
       <div class="card"><div class="card-h"><h3>${icon("user")}Case summary</h3><span class="chip mono">${esc(c.case_id)}</span></div><div class="card-b">
         <div style="font-weight:600;margin-bottom:10px">${esc(c.question)}</div>
         <dl class="facts">${facts.map(([k, val]) => `<dt>${esc(k)}</dt><dd>${esc(fmtVal(val))}</dd>`).join("")}</dl>
@@ -646,7 +649,7 @@
     </div>
     <div class="stack no-print">
       <div class="card"><div class="card-h"><h3>${icon("users")}Specialist approvals</h3></div><div class="card-b"><div class="appr" style="grid-template-columns:1fr">
-        ${ROLES.map((x) => { const ap = r.approvals?.[x]; const rv = r.reviews?.[x]; return `<div class="appr-cell ${ap != null ? "ok" : "no"}">${roleTag(x)}<div style="flex:1"><div class="lbl">${ROLE[x].name}</div><b>${ap != null ? `v${ap} Approved` : VERDICT[rv?.verdict]?.t || "Not approved"}</b></div>${ap != null ? icon("check") : icon("alert")}</div>`; }).join("")}
+        ${ROLES.map((x) => { const ap = r.approvals?.[x]; const rv = r.reviews?.[x]; return `<div class="appr-cell ${ap != null ? "ok" : "no"}">${roleTag(x)}<div style="flex:1"><div class="lbl">${ROLE[x].name}</div><b>${ap != null ? `v${ap} ${rv?.verdict === "approve_conditional" ? "With conditions" : "Approved"}` : VERDICT[rv?.verdict]?.t || "Not approved"}</b></div>${ap != null ? icon("check") : icon("alert")}</div>`; }).join("")}
         <div class="appr-cell" style="background:var(--D-soft);border-color:#c6d5fb">${roleTag("D")}<div style="flex:1"><div class="lbl">Coordinator · synthesis and revision</div><b>Total ${r.revisions}  revisions</b></div></div>
       </div></div></div>
       ${signHTML(d)}
@@ -794,6 +797,7 @@
       const w = S.w;
       if (!startChecks().ok) return toast("Resolve the preflight checks first", "bad");
       const body = { mode: w.mode, settings: w.settings };
+      if (w.parentRunId) body.parent_run_id = w.parentRunId;
       if (w.mode === "demo") {
         body.scenario = w.scenario; body.pace = w.pace;
         if (!w.useDemoData) { body.case = buildCase(); if (w.evidence) body.evidence = w.evidence; }
@@ -975,6 +979,78 @@
       ${e.task_type==="review_plan"?`<div class="field"><label>Plan to review (model input)</label><textarea class="textarea" data-input="candidate-plan">${esc(e.candidate_plan)}</textarea></div>`:""}
       <button class="btn sm" data-action="case-memory">${icon("clock")}Preview memory at this time</button></div>`;
   }
+  function assumptionsHTML(draft) {
+    const assumptions=draft.assumptions||[], requests=draft.information_requests||[];
+    if(!assumptions.length&&!requests.length)return "";
+    return `<section class="card"><div class="card-h"><h3>${icon("git")}Assumptions & alternatives · 适用前提</h3></div><div class="card-b stack">${assumptions.map(a=>`<div class="assumption-item"><b>${esc(a.condition)}</b><div class="small" style="margin-top:6px"><strong>If not met / 条件不成立：</strong>${esc(a.if_not_met)}</div></div>`).join("")}${requests.length?`<details><summary>Decision-dependent information · 会影响建议的资料 (${requests.length})</summary>${requests.map(a=>`<div class="issue"><b>${esc(a.question)}</b><div class="small muted">${esc(a.impact)}</div></div>`).join("")}</details>`:""}</div></section>`;
+  }
+  function informationSummaryHTML(d) {
+    const follow=d.information_followup, rows=follow?.table||[], gaps=rows.filter(r=>r.priority!=='optional'&&(!r.present||r.issues?.length));
+    return `<section class="card information-summary"><div class="card-h"><h3>${icon("file")}Information checklist · 病例资料表</h3><span class="muted small">${rows.length} fields · ${gaps.length} conditional dependencies</span></div><div class="card-b"><p class="small muted" style="margin-top:0">一般未提供项默认不阻断建议；会改变决策的缺项写明假设。未记录不自动变成“无”。</p>${follow?.history?.length?`<div class="notice info">Saved responses do not change this historical report. Generate an updated recommendation to use them.<br>已保存的补充信息尚未用于此报告，请生成新版。</div>`:""}<div class="row wrap"><button class="btn" data-action="information-run">${icon("pen")}Review information · 填资料表</button><button class="btn primary" data-action="information-followup">${icon("upload")}补传资料 / 生成新版</button></div></div></section>`;
+  }
+  async function openInformation(run=null) {
+    const version=routeVersion;
+    const c=run?.information_followup?.case || (run?run.case:buildCase());
+    let rows=run?.information_followup?.table;
+    if(!rows) {
+      rows=(S.info?.information_fields||[]).map(f=>({...f,value:c.facts[f.field],response:(c.information_responses||[]).find(r=>r.field===f.field)}));
+      if(c.case_id&&c.question&&(Object.keys(c.facts).length||c.information_responses?.length)) {
+        try { rows=(await api('/api/clinical/check',{body:{case:c}})).information_table; } catch { /* An incomplete form can still collect information. */ }
+      }
+    }
+    if(version!==routeVersion)return;
+    S.informationEditor={runId:run?.id,rows,case:c};
+    openDrawer(`<div class="dh"><h3>Information checklist · 病例资料表</h3><button class="btn ghost sm" data-action="close-drawer">${icon("x")}</button></div><div class="db stack"><div class="notice info"><div>不要求全部填齐。一般缺项默认不重要、不阻断建议；关键缺项会作为适用前提。<br>“无”表示医生已确认不存在；“本次不重要”保留为相关性判断。</div></div><div class="field"><label for="information-clinician">Confirming clinician · 确认医生</label><input class="input" id="information-clinician" placeholder="Name / staff ID"></div><div class="information-grid">${rows.map((r,i)=>{
+      const answer=r.response, value=answer?.status==='provided'?answer.value:r.value;
+      const str=value==null?'':typeof value==='string'?value:JSON.stringify(value);
+      return `<section class="information-row" data-information-row="${i}"><div class="row wrap"><b>${esc(r.label_zh)}</b><span class="spacer"></span>${badge(r.priority==='optional'?'一般项 · 默认不阻断':'影响相关决策时列假设',r.priority==='optional'?'gray':'info','nodot')}</div><div class="small muted">${esc(r.label)}</div><div class="small information-existing">Current / 当前：${esc(r.value==null?'未记录':fmtVal(r.value))}</div><select class="select" aria-label="${esc(r.field)} status" data-information-status>${[['','保持现有记录 / 未提供'],['provided','补充信息 Provided'],...(r.allow_absent?[['absent','医生确认：无 / None']]:[]),['not_relevant','本次不重要 / Not relevant'],['unknown','暂不清楚 / Unknown']].map(([v,t])=>`<option value="${v}" ${answer?.status===v?'selected':''}>${t}</option>`).join('')}</select><textarea class="textarea" aria-label="${esc(r.field)} value" data-information-value placeholder="补充值或说明；检验项目可填写含数值、单位、日期的 JSON，或补传报告">${esc(str)}</textarea><input class="input" aria-label="${esc(r.field)} note" data-information-note value="${esc(answer?.note||'')}" placeholder="备注或本次不重要的原因（选填）">${r.issues?.length?`<div class="small muted">${r.issues.map(x=>esc(x.message)).join('<br>')}</div>`:''}</section>`;
+    }).join('')}</div><div class="row wrap"><button class="btn primary" data-action="information-save">${icon('check')}Save responses · 保存</button>${run?'<button class="btn" data-action="information-save-continue">保存并补传资料 / 生成新版</button>':''}</div></div>`);
+  }
+  async function saveInformation() {
+    const editor=S.informationEditor, rows=[], clinician=$('#information-clinician').value.trim();
+    for(const node of $$('[data-information-row]')) {
+      const field=editor.rows[Number(node.dataset.informationRow)].field;
+      const status=$('[data-information-status]',node).value;
+      if(!status)continue;
+      let note=$('[data-information-note]',node).value.trim();
+      if(status==='not_relevant'&&!note)note='Clinician considers this field not material to this decision.';
+      rows.push({field,status,value:status==='provided'?parseVal($('[data-information-value]',node).value):null,note,clinician,recorded_at:new Date().toISOString()});
+    }
+    if(rows.length&&!clinician)throw Error('请填写确认医生 / Confirming clinician is required');
+    if(editor.runId) {
+      const response=await api(`/api/runs/${encodeURIComponent(editor.runId)}/information`,{body:{responses:rows}});
+      if(S.run?.id===editor.runId){S.run.information_followup=response;renderRunBody();}
+    } else {
+      const existing=new Map((extraCase().information_responses||[]).map(r=>[r.field,r]));
+      rows.forEach(r=>existing.set(r.field,r));
+      const merged=[...existing.values()];
+      // Server contract checks confirmations before including them in a run.
+      const c=buildCase();c.information_responses=merged;
+      const check=await api('/api/validate',{body:{case:c}});
+      if(!check.case?.ok)throw Error(check.case?.error||'Complete case ID and question before saving');
+      extraCase().information_responses=merged;saveWizard();renderWizard();
+    }
+    closeDrawer();toast('Responses saved · 已保存；原报告保持不变','ok');
+  }
+  async function prepareFollowup() {
+    const d=S.run;
+    const fresh=await api('/api/runs/'+encodeURIComponent(d.id));
+    const evidence=await api('/api/runs/'+encodeURIComponent(d.id)+'/evidence.json');
+    const validation=await api('/api/validate',{body:{evidence}});
+    S.w=defaultWizard();S.w.case=caseFromJSON(fresh.information_followup.case);S.w.parentRunId=d.id;
+    S.w.evidence=evidence;S.w.evidenceName='Frozen evidence from '+d.id;S.w.evidenceCheck=validation.evidence;
+    S.w.mode=d.mode==='synthetic_demo'?'demo':'llm';S.w.useDemoData=false;
+    S.w.settings={...defaultsToSettings(),...(d.result?.settings?{max_revisions:d.result.settings.max_revisions,concurrency:d.result.settings.max_concurrency,timeout:d.result.settings.call_timeout,top_k:d.result.settings.top_k}:{})};
+    S.w.llm={base_url:d.meta?.base_url||'',model:d.meta?.model||'',api_style:d.meta?.api_style||'responses',role_models:d.meta?.role_models||{}};
+    saveWizard();closeDrawer();location.hash='#/new';toast('Add records or generate an updated recommendation · 旧版已保留','info');
+  }
+  Object.assign(actions, {
+    'information-new':()=>openInformation(),
+    'information-run':()=>openInformation(S.run),
+    'information-save':async()=>{try{await saveInformation();}catch(e){toast(e.message,'bad');}},
+    'information-save-continue':async()=>{try{await saveInformation();await prepareFollowup();}catch(e){toast(e.message,'bad');}},
+    'information-followup':async()=>{try{await prepareFollowup();}catch(e){toast(e.message,'bad');}},
+  });
   function intakeHTML() {
     const e=extraCase(), rows=e.observations || [], sources=(S.w.sources || []).filter(s=>(e.source_ids||[]).includes(s.id));
     const input=(i,k,v,placeholder="")=>`<input class="input" data-input="observation" data-i="${i}" data-k="${k}" value="${esc(v)}" placeholder="${placeholder}">`;
@@ -982,7 +1058,7 @@
       <div class="card-b stack"><p class="muted small" style="margin:0">Word, report screenshots or text · 6 MB per file. Select records available at the decision time. Keep future outcomes and held-out physician plans in Research labels.</p>
       ${sources.map(s=>`<div class="source-row"><div><b>${esc(s.name)}</b><div class="small muted">${esc(s.id)} · ${s.images?.length || (s.mime.startsWith("image/")?1:0)} images</div><div class="source-thumbs">${(s.mime.startsWith("image/")?[s.id]:(s.images||[])).map(id=>`<button class="source-thumb" data-action="source-open" data-id="${esc(id)}" title="View source"><img src="/api/sources/${encodeURIComponent(id)}/image" alt="Uploaded report"></button>`).join("")}</div></div>
         <div class="stack"><input class="input" aria-label="Source available time" data-input="source-context" data-id="${esc(s.id)}" data-k="available_at" value="${esc(e.source_context?.[s.id]?.available_at)}" placeholder="Source available at (ISO + timezone)"><input class="input" aria-label="Source reviewer" data-input="source-context" data-id="${esc(s.id)}" data-k="reviewer" value="${esc(e.source_context?.[s.id]?.reviewer)}" placeholder="Verified by (whole source fits this decision time)"></div><button class="btn ghost sm" data-action="source-remove" data-id="${esc(s.id)}" title="Detach source">${icon("x")}</button></div>`).join("")}
-      <div class="row wrap"><button class="btn" data-action="source-extract" ${e.source_ids?.length?"":"disabled"}>${icon("sparkles")}Extract with model</button><button class="btn ghost" data-action="obs-add">${icon("plus")}Add sourced observation</button><a class="btn ghost" href="#/settings">Model settings</a></div><span class="hint">Extraction uses your configured model service. Confirm each reading and date before review. Raw CT interpretation is not supported.</span>
+      <div class="row wrap"><button class="btn" data-action="source-extract" ${e.source_ids?.length?"":"disabled"}>${icon("sparkles")}Extract with model</button><button class="btn ghost" data-action="obs-add">${icon("plus")}Add sourced observation</button><a class="btn ghost" href="#/settings">Model settings</a></div><span class="hint">上传后点击 Extract with model，并核对提取结果；仅上传不会自动改变病例事实。Extraction uses your configured model service. Confirm each reading and date before review. Raw CT interpretation is not supported.</span>
       ${S.w.extractionIssues?.length?`<div class="notice warn">${icon("info")}<div>${S.w.extractionIssues.map(esc).join("<br>")}</div></div>`:""}
       <div class="observation-list">${rows.map((o,i)=>`<div class="observation-card"><div class="row"><b>Observation ${i+1}</b><span class="spacer"></span><select class="select" data-change="observation-status" data-i="${i}">${["unverified","confirmed","excluded"].map(s=>`<option value="${s}" ${o.status===s?"selected":""}>${s}</option>`).join("")}</select><button class="btn ghost sm" data-action="obs-remove" data-i="${i}" title="Remove observation">${icon("x")}</button></div>
         <div class="grid g-3"><div class="field"><label>Field</label>${input(i,"key",o.key,"serum_creatinine")}</div><div class="field"><label>Value</label>${input(i,"value",typeof o.value==="object"?JSON.stringify(o.value):o.value,"null if unreadable")}</div><div class="field"><label>Unit</label>${input(i,"unit",o.unit,"umol/L")}</div></div>
@@ -1015,7 +1091,7 @@
     "source-extract":async el=>{el.disabled=true;el.textContent="Extracting…";try{const data=await api("/api/intake/extract",{body:{source_ids:extraCase().source_ids,llm:connection()}});extraCase().observations=[...(extraCase().observations||[]),...data.output.observations];S.w.extractionIssues=data.output.issues;saveWizard();if(location.hash.startsWith("#/new"))renderWizard();toast("Extraction ready for verification","ok");}catch(e){toast(e.message,"bad");el.disabled=false;el.textContent="Extract with model";}},
     "obs-add":()=>{const e=extraCase();(e.observations||=[]).push({key:"",value:null,unit:"",observed_at:"",available_at:"",source_id:e.source_ids?.[0]||"",location:"",status:"unverified"});saveWizard();renderWizard();},
     "obs-remove":el=>{extraCase().observations.splice(+el.dataset.i,1);saveWizard();renderWizard();},
-    "clinical-check":async el=>{el.disabled=true;try{const c=await api("/api/clinical/check",{body:{case:buildCase()}});$("#clinical-result").innerHTML=`<div class="notice ${c.blocking?'warn':'info'}">${icon("shield")}<div>${c.input_blocked?'Verify source records before model review.':c.blocking?'Review can assess available facts; dependent decisions need more information.':'Core checks complete; specialist assessment still applies.'}</div></div>${checkList(c.issues.map(i=>[i.severity==='blocking'?'warn':'info',i.roles.join('/')+': '+i.message]))}<details class="ev"><summary>Checklist and calculations</summary><pre class="json">${jsonHTML(c)}</pre></details>`;}catch(e){toast(e.message,"bad");}finally{el.disabled=false;}},
+    "clinical-check":async el=>{el.disabled=true;try{const c=await api("/api/clinical/check",{body:{case:buildCase()}});$("#clinical-result").innerHTML=`<div class="notice ${c.blocking?'warn':'info'}">${icon("shield")}<div>${c.input_blocked?'Verify source records before model review.':c.blocking||c.conditional?'Generate a recommendation with explicit conditions; missing information does not stop drafting.':'Core checks complete; optional missing fields do not stop drafting.'}</div></div>${checkList(c.issues.filter(i=>i.severity!=="optional").map(i=>[i.severity==='blocking'?'warn':'info',i.roles.join('/')+': '+i.message]))}<details class="ev"><summary>Checklist and calculations</summary><pre class="json">${jsonHTML(c)}</pre></details>`;}catch(e){toast(e.message,"bad");}finally{el.disabled=false;}},
     "label-add":()=>showLabelForm(),"run-label-add":()=>showLabelForm(S.run.id),
     "label-remove":el=>{S.w.labels.splice(+el.dataset.i,1);saveWizard();renderWizard();},
     "label-save":async el=>{try{const value={kind:$("#label-kind").value,content:$("#label-content").value,occurred_at:$("#label-date").value,source:$("#label-source").value,recorded_by:$("#label-actor").value};if(!value.content.trim()||!value.source.trim()||!value.recorded_by.trim()||!Number.isFinite(Date.parse(value.occurred_at)))throw Error("Complete all label fields with an ISO date and timezone");if(el.dataset.run){await api(`/api/runs/${encodeURIComponent(el.dataset.run)}/labels`,{body:{labels:[value]}});S.run=await api(`/api/runs/${encodeURIComponent(el.dataset.run)}`);renderRunBody();}else{(S.w.labels||=[]).push(value);saveWizard();renderWizard();}closeDrawer();toast("Label saved outside model context","ok");}catch(e){toast(e.message,"bad");}},

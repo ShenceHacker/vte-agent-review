@@ -21,7 +21,11 @@ def report(result: dict) -> str:
              f"Mode: `{result['mode']}`; Draft version: {result['version']}; D revisions: {result['revisions']}.", "",
              "Research workflow output; final clinical decisions require physician review.", ""]
     if result["draft"]:
-        lines += ["## " + ("Reviewed draft" if result["final"] else "Draft requiring review"), "", result["draft"]["shared_plan"], ""]
+        lines += ["## " + ("Conditional recommendation" if result["status"] == "conditional" else "Reviewed draft" if result["final"] else "Draft requiring review"), "", result["draft"]["shared_plan"], ""]
+        for a in result["draft"].get("assumptions", []):
+            lines += [f"- Assumption ({','.join(a['roles'])}): {a['condition']}", f"  - If not met: {a['if_not_met']}"]
+        for a in result["draft"].get("information_requests", []):
+            lines += [f"- Information: {a['question']}", f"  - Decision impact: {a['impact']}"]
         for role in ROLES:
             section = result["draft"]["sections"][role]
             lines += [f"### {role}: {ROLE_NAMES[role]}", "", section["text"], "", "Evidence: " + ", ".join(section["evidence_ids"]), ""]

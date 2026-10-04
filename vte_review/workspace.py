@@ -12,6 +12,7 @@ from .contracts import validate_case
 from .intake import validate_extraction
 from .patient_memory import instant
 from .providers import ChatCompletionsModel
+from .information import information_table, validate_responses
 
 
 def configured_model(llm: dict, timeout: float = 120):
@@ -47,9 +48,32 @@ def validate_labels(value):
 
 
 class WorkspaceServices:
+    def information_followup(self, run_id, body=None):
+        """Append confirmations without rewriting the original case/model result."""
+        path = self.run_dir(run_id)
+        case = json.loads((path / "case.json").read_text(encoding="utf-8"))
+        file = path / "information_responses.json"
+        with self.lock:
+            history = json.loads(file.read_text(encoding="utf-8")) if file.exists() else []
+            if body is not None:
+                rows = validate_responses(body.get("responses"))
+                # Verify finite JSON before saving any part of a batch.
+                json.dumps(rows, allow_nan=False)
+                saved_at = datetime.now(timezone.utc).isoformat()
+                history += [{"id": "INFO-" + uuid4().hex, "saved_at": saved_at, "responses": rows}]
+                file.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
+        latest = {r["field"]: r for r in case.get("information_responses", [])}
+        for batch in history:
+            latest.update({r["field"]: r for r in batch["responses"]})
+        case["information_responses"] = list(latest.values())
+        case = validate_case(case)
+        return {"case": case, "table": information_table(case), "history": history,
+                "original_report_unchanged": True, "parent_run_id": run_id}
+
     def check_case(self, body):
         case = validate_case(body.get("case"))
-        return clinical_check(case)
+        checks = clinical_check(case)
+        return {**checks, "information_table": information_table(case, checks)}
 
     def memory_for(self, case):
         p = case.get("patient")

@@ -51,7 +51,7 @@ class Workflow:
     async def call(self, task: str, role: str, payload: dict, validator) -> dict:
         async with self.semaphore:
             payload = deepcopy(payload)
-            payload["clinical_checks"] = {**self.checks, "issues": [i for i in self.checks.get("issues", []) if role == "D" or role in i["roles"]]}
+            payload["clinical_checks"] = {**self.checks, "issues": [i for i in self.checks.get("issues", []) if i["severity"] != "optional" and (role == "D" or role in i["roles"])]}
             payload["memory_context"] = {k: v for k, v in self.memory.items() if k != "entries"}
             session = ClinicalTools(role, self.case, self.evidence, memory=self.memory, sources=self.sources,
                                     emit=self.emit, top_k=self.settings.top_k)
@@ -106,6 +106,8 @@ class Workflow:
             "case": self.case, "version": self.version, "shared_plan": self.draft["shared_plan"],
             "section": own, "dependencies": sections, "initial_assessment": self.assessments[role],
             "previous_review": self.reviews.get(role),
+            "assumptions": [a for a in self.draft.get("assumptions", []) if role in a["roles"]],
+            "information_requests": [a for a in self.draft.get("information_requests", []) if role in a["roles"]],
             "evidence": [self.pool[k] for k in sorted(ids)],
         }
 
@@ -118,6 +120,9 @@ class Workflow:
             "version": self.version, "revisions": self.revisions,
             "approvals": self.approvals, "reviews": self.reviews,
             "draft": self.draft, "final": self.draft if status == "approved" else None,
+            "recommendation": self.draft,
+            "review_complete": status in {"approved", "conditional"},
+            "information_status": "open" if self.checks.get("conditional") or (self.draft or {}).get("information_requests") else "no_requests",
             "evidence": list(self.pool.values()), "events": self.events,
             "clinical_checks": self.checks, "memory_snapshot": self.memory, "memory_proposals": self.proposals,
             "metrics": {
@@ -200,16 +205,21 @@ class Workflow:
 
                 replies = await self.parallel(selected, review)
                 for role, reply in replies.items():
+                    if reply["verdict"] == "approve_conditional" and not any(role in a["roles"] for a in self.draft.get("assumptions", [])):
+                        raise ContractError("Conditional approval requires an explicit applicable draft assumption")
                     self.reviews[role] = reply
-                    self.approvals[role] = self.version if reply["verdict"] == "approve" else None
+                    self.approvals[role] = self.version if reply["verdict"] in {"approve", "approve_conditional"} else None
                 pending = {r for r in ROLES if self.approvals[r] is None}
                 if not pending:
-                    if self.checks.get("blocking"):
-                        return self.finish("needs_human_review", "clinical_data_requires_review")
+                    conditional = (self.checks.get("blocking") or self.checks.get("conditional")
+                                   or self.draft.get("assumptions") or self.draft.get("information_requests")
+                                   or any(v["verdict"] == "approve_conditional" for v in self.reviews.values()))
+                    if conditional:
+                        if not self.draft.get("assumptions"):
+                            return self.finish("needs_human_review", "conditional_assumptions_missing")
+                        return self.finish("conditional", "conditional_recommendation_ready")
                     # Output the exact approved draft: no unreviewed final rewrite by D.
                     return self.finish("approved", "all_required_reviews_passed")
-                if any(self.reviews[r]["verdict"] == "needs_information" for r in pending):
-                    return self.finish("needs_human_review", "missing_information")
                 if self.revisions >= self.settings.max_revisions:
                     return self.finish("needs_human_review", "revision_limit")
 
@@ -221,6 +231,7 @@ class Workflow:
                 revision = await self.call("revise", "D", {
                     "case": self.case, "version": self.version, "draft": self.draft,
                     "reviews": self.reviews, "pending_roles": sorted(pending),
+                    "revision_policy": "Fix actionable issues now. Convert decision-dependent missing information into explicit assumptions and if-not-met branches. Do not wait for every field or invent negative findings.",
                     "evidence": list(self.pool.values()),
                 }, validate_revision)
                 if revision["draft"] == self.draft:

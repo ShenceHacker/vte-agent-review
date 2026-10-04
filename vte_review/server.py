@@ -40,6 +40,8 @@ from .intake import SourceStore
 from .workspace import WorkspaceServices, configured_model, validate_labels
 from .providers import ProviderError
 from .example_case import CLINICAL_EXAMPLE
+from .clinical import FIELD_SPECS
+from .information import ABSENT_VALUES, ZH_LABELS
 
 WEB = Path(__file__).with_name("web")
 RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$")
@@ -129,7 +131,10 @@ class App(WorkspaceServices):
         return {
             "version": __version__, "prompt_version": PROMPT_VERSION, "runs_dir": str(self.runs),
             "knowledge": self.knowledge.stats(),
-            "capabilities": ["patient_memory", "source_images", "docx_intake", "tool_calling", "clinical_checks", "research_labels"],
+            "capabilities": ["patient_memory", "source_images", "docx_intake", "tool_calling", "clinical_checks", "research_labels", "conditional_recommendations", "information_followup"],
+            "information_fields": [{"field": k, "label": label, "label_zh": ZH_LABELS[k], "roles": list(roles),
+                                    "priority": "decision_dependent" if critical else "optional", "allow_absent": k in ABSENT_VALUES}
+                                   for k, label, roles, critical in FIELD_SPECS],
             "roles": ROLE_NAMES, "httpx": has_httpx,
             "defaults": asdict(Settings(call_timeout=float(os.environ.get("VTE_CALL_TIMEOUT", "60")))), "scenarios": SCENARIOS,
             "env": {
@@ -216,6 +221,7 @@ class App(WorkspaceServices):
                 "signoffs": read_json(path / "physician_reviews.json", []) or [],
                 "research_labels": read_json(path / "research_labels.json", []) or [],
                 "memory_updates": read_json(path / "memory_updates.json", []) or [],
+                "information_followup": self.information_followup(run_id),
                 "has_report": (path / "report.md").exists()}
 
     def validate(self, body: dict) -> dict:
@@ -237,6 +243,9 @@ class App(WorkspaceServices):
 
     # ---------- commands ----------
     def start(self, body: dict) -> str:
+        parent_run_id = body.get("parent_run_id")
+        if parent_run_id:
+            self.run_dir(parent_run_id)
         labels = validate_labels(body.get("research_labels", []))
         mode = body.get("mode", "demo")
         raw = body.get("settings") or {}
@@ -258,6 +267,12 @@ class App(WorkspaceServices):
         meta = {"source": "gui", "mode": mode, "created_at": now_iso(), "app_version": __version__}
         knowledge_ids = body.get("knowledge_ids")
         frozen = self.knowledge.snapshot(knowledge_ids) if knowledge_ids is not None else None
+        if parent_run_id and frozen is None:
+            parent = self.run_dir(parent_run_id)
+            original_evidence = read_json(parent / "evidence.json")
+            if (body.get("evidence") == original_evidence and original_evidence is not None
+                    and read_json(parent / "meta.json", {}).get("retrieval") == "SQLite FTS5 / BM25"):
+                frozen = original_evidence
         if frozen is not None:
             body = {**body, "evidence": frozen}
             meta.update(knowledge_ids=knowledge_ids, retrieval="SQLite FTS5 / BM25", evidence_snapshot=True)
@@ -308,6 +323,8 @@ class App(WorkspaceServices):
         if frozen is not None:
             index = SQLiteEvidenceIndex(frozen)
 
+        if parent_run_id:
+            meta["parent_run_id"] = parent_run_id
         memory_snapshot = self.memory_for(case)
         if case.get("source_ids"):
             self.sources.bundle(case["source_ids"])
@@ -525,7 +542,7 @@ class Handler(BaseHTTPRequestHandler):
                     after = int(parse_qs(url.query).get("after", ["0"])[0] or 0)
                     last = self.headers.get("Last-Event-ID", "")
                     return self.stream(run_id, max(0, after, int(last) if last.isdigit() else 0))
-                if action in ("report.md", "result.json"):
+                if action in ("report.md", "result.json", "evidence.json"):
                     path = self.app.run_dir(run_id) / action
                     if not path.is_file():
                         raise LookupError(action)
@@ -565,6 +582,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(self.app.validate(body))
             if path == "/api/clinical/check":
                 return self.send_json(self.app.check_case(body))
+            info_match = re.fullmatch(r"/api/runs/([^/]+)/information", path)
+            if info_match:
+                return self.send_json(self.app.information_followup(info_match.group(1), body))
             if path == "/api/sources":
                 return self.send_json(self.app.sources.ingest(body.get("filename"), body.get("content_base64")), 201)
             if path == "/api/intake/extract":
