@@ -8,15 +8,24 @@ VTE 抗凝决策助手：根据病例生成个体化治疗建议，并支持核�
 
 ### 病例资料表与条件性建议（v0.5）
 
-报告页点击 **Review information · 填资料表**，或在新病例页面点击 **Information checklist · 资料表**。表中有 22 项常见病例信息，涵盖血栓、既往治疗、检验、出血、合并用药及随访条件，**不要求全部填齐**。
+报告页点击 **Review information**，或在新病例页面点击 **Information checklist**。表中有 22 项常见病例信息，涵盖血栓、既往治疗、检验、出血、合并用药及随访条件，**不要求全部填齐**。
 
 - 一般未提供项默认不阻断，也不作为必填项反复追问；可能改变选择或剂量的未知项写入建议的 `assumptions`，说明适用条件和条件不成立时的处理分支。
 - 医生可选择“已提供／确认无／本次不重要／暂不清楚”。“无”仅用于可否定的病史、症状或用药信息，不能用来代替检验数值；“本次不重要”保留为相关性判断，不制造阴性或正常结果。
 - ABC 可以返回 `approve_conditional`。D 会继续处理引用和措辞等可修改的问题，不再因任一角色请求补资料就立即结束。共享假设变化后 ABC 重新审核，仍受修订次数上限约束。
-- **补传资料 / 生成新版** 复用原病例、已保存的医生确认、模型设置及原证据快照。可在 Source documents & images 上传 Word、图片或文字，提取并核对后启动新运行；原报告及标签保持不变。
+- **Add records / update recommendation** 复用原病例、已保存的医生确认、模型设置及原证据快照。可在 Source documents & images 上传 Word、图片或文字，提取并核对后启动新运行；原报告及标签保持不变。
 - `conditional` 表示带假设的建议完成 Agent 审核，尚待医生审阅；`recommendation` 提供当前草案，`review_complete` 和 `information_status` 分别表示审核与信息状态。为兼容原接口，只有 `approved` 会填入 `final`，不能用 `final` 是否为空来判断有无建议。
 
 医生确认以追加批次保存在原运行的 `information_responses.json`，包含确认人、时间和备注；新版记录 `parent_run_id`。保存后需显式生成新版，才会将补充信息用于模型。
+
+### 论文流程图
+
+界面统一为英文。中英文流程图采用相同结构：病例与证据、ABC/D 审核与修订、医生审核和按需补充资料、拟定对比评价。
+
+- 英文：[PNG](docs/figures/VTE_workflow_2026-10-04_en.png) · [SVG](docs/figures/VTE_workflow_2026-10-04_en.svg) · [PDF](docs/figures/VTE_workflow_2026-10-04_en.pdf)
+- 中文：[PNG](docs/figures/VTE_workflow_2026-10-04_zh.png) · [SVG](docs/figures/VTE_workflow_2026-10-04_zh.svg) · [PDF](docs/figures/VTE_workflow_2026-10-04_zh.pdf)
+
+矢量源可用 `python scripts/build_workflow_figures.py --lang en` 或 `--lang zh` 重建，需要 ReportLab 和 Windows Arial/微软雅黑字体；PNG 由 PDF 按 300 dpi 渲染。虚线回路表示医生按需补充后显式启动新运行，原报告保留；研究评价面板为拟定设计。
 
 
 ### FE 接口启动

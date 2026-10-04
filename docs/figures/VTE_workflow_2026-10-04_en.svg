@@ -1,0 +1,207 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2280" height="2390" viewBox="0 0 2280 2390">
+<title>VTE study workflow</title>
+<desc>Case preparation and role-specific retrieval, parallel specialist assessment, coordinator synthesis, targeted review and revision, and planned comparative evaluation.</desc>
+<rect x="0" y="0" width="2280" height="2390" rx="0" fill="white" stroke="white" stroke-width="0"/>
+<text x="65" y="86.66999999999999" font-family="Arial, Helvetica, sans-serif" font-size="49" font-weight="700" text-anchor="start" fill="#17365A">VTE anticoagulation: RAG, multi-agent review and follow-up</text>
+<text x="65" y="142.07" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="400" text-anchor="start" fill="#576F8A">Evidence-supported recommendations from available information, with explicit assumptions</text>
+<rect x="60" y="185" width="480" height="1315" rx="20" fill="#F5F9FE" stroke="#CADCEE" stroke-width="2"/>
+<rect x="84" y="209" width="42" height="42" rx="10" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="105" y="240.73" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="middle" fill="white">a</text>
+<text x="144" y="240.56" font-family="Arial, Helvetica, sans-serif" font-size="32" font-weight="700" text-anchor="start" fill="#17365A">Cases &amp; evidence</text>
+<rect x="570" y="185" width="1650" height="1315" rx="20" fill="#F5F9FE" stroke="#CADCEE" stroke-width="2"/>
+<rect x="594" y="209" width="42" height="42" rx="10" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="615" y="240.73" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="middle" fill="white">b</text>
+<text x="654" y="240.56" font-family="Arial, Helvetica, sans-serif" font-size="32" font-weight="700" text-anchor="start" fill="#17365A">Multi-agent review and revision</text>
+<rect x="60" y="1540" width="2160" height="375" rx="20" fill="#F5F9FE" stroke="#CADCEE" stroke-width="2"/>
+<rect x="84" y="1564" width="42" height="42" rx="10" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="105" y="1595.73" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="middle" fill="white">c</text>
+<text x="144" y="1595.56" font-family="Arial, Helvetica, sans-serif" font-size="32" font-weight="700" text-anchor="start" fill="#17365A">Clinical use and information follow-up</text>
+<rect x="60" y="1960" width="2160" height="355" rx="20" fill="#F5F9FE" stroke="#CADCEE" stroke-width="2"/>
+<rect x="84" y="1984" width="42" height="42" rx="10" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="105" y="2015.73" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="middle" fill="white">d</text>
+<text x="144" y="2015.56" font-family="Arial, Helvetica, sans-serif" font-size="32" font-weight="700" text-anchor="start" fill="#17365A">Planned comparative evaluation</text>
+<rect x="105" y="298" width="390" height="165" rx="15" fill="white" stroke="#CADCEE" stroke-width="2"/>
+<rect x="105" y="298" width="6" height="165" rx="3" fill="#367FCC" stroke="#367FCC" stroke-width="0"/>
+<text x="129" y="345.73" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start" fill="#17365A">VTE cases</text>
+<text x="129" y="394.24" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="400" text-anchor="start" fill="#576F8A">DVT and/or PE</text>
+<text x="129" y="434.24" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="400" text-anchor="start" fill="#576F8A">Decision-specific case set</text>
+<polyline points="300,463 300,520" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polygon points="300,520 307.0,505.0 293.0,505.0" fill="#367FCC"/>
+<rect x="105" y="520" width="390" height="233" rx="15" fill="white" stroke="#CADCEE" stroke-width="2"/>
+<rect x="105" y="520" width="6" height="233" rx="3" fill="#367FCC" stroke="#367FCC" stroke-width="0"/>
+<text x="129" y="567.73" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start" fill="#17365A">Case preparation</text>
+<text x="129" y="614.58" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="400" text-anchor="start" fill="#576F8A">De-identification</text>
+<text x="129" y="654.58" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="400" text-anchor="start" fill="#576F8A">Available clinical facts</text>
+<text x="129" y="694.58" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="400" text-anchor="start" fill="#576F8A">Decision time &amp; question</text>
+<text x="129" y="734.58" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="400" text-anchor="start" fill="#576F8A">Known facts &amp; explicit gaps</text>
+<rect x="105" y="860" width="390" height="237" rx="15" fill="white" stroke="#CADCEE" stroke-width="2"/>
+<rect x="105" y="860" width="6" height="237" rx="3" fill="#367FCC" stroke="#367FCC" stroke-width="0"/>
+<text x="129" y="907.73" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start" fill="#17365A">Knowledge base</text>
+<text x="129" y="954.58" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="400" text-anchor="start" fill="#576F8A">Guidelines / local protocols</text>
+<text x="129" y="994.58" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="400" text-anchor="start" fill="#576F8A">Drug prescribing information</text>
+<text x="129" y="1034.58" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="400" text-anchor="start" fill="#576F8A">Source, version &amp; role tags</text>
+<text x="129" y="1074.58" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="400" text-anchor="start" fill="#576F8A">Document segmentation</text>
+<polyline points="300,1097 300,1150" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polygon points="300,1150 307.0,1135.0 293.0,1135.0" fill="#367FCC"/>
+<rect x="105" y="1150" width="390" height="237" rx="15" fill="#EAF3FE" stroke="#CADCEE" stroke-width="2"/>
+<rect x="105" y="1150" width="6" height="237" rx="3" fill="#367FCC" stroke="#367FCC" stroke-width="0"/>
+<text x="129" y="1197.73" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start" fill="#17365A">Role-specific retrieval</text>
+<text x="129" y="1244.58" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="400" text-anchor="start" fill="#576F8A">Case + specialist query</text>
+<text x="129" y="1284.58" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="400" text-anchor="start" fill="#576F8A">FTS5 / BM25; top-k = 4</text>
+<text x="129" y="1324.58" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="400" text-anchor="start" fill="#576F8A">Source-linked passages</text>
+<text x="129" y="1364.58" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="400" text-anchor="start" fill="#576F8A">Frozen evidence snapshot</text>
+<polyline points="105,694 80,694 80,1260 105,1260" fill="none" stroke="#367FCC" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="105,1260 90.0,1253.0 90.0,1267.0" fill="#367FCC"/>
+<polyline points="495,625 600,625 600,326 735,326" fill="none" stroke="#367FCC" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="735,326 720.0,319.0 720.0,333.0" fill="#367FCC"/>
+<polyline points="495,1260 625,1260 625,353 735,353" fill="none" stroke="#367FCC" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="735,353 720.0,346.0 720.0,360.0" fill="#367FCC"/>
+<text x="105" y="1443.09" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="400" text-anchor="start" fill="#576F8A">Shared case; role-specific evidence.</text>
+<rect x="735" y="292" width="1060" height="98" rx="15" fill="#EAF3FE" stroke="#CADCEE" stroke-width="2"/>
+<text x="1265" y="336.39" font-family="Arial, Helvetica, sans-serif" font-size="33" font-weight="700" text-anchor="middle" fill="#17365A">Structured patient facts + retrieved evidence</text>
+<text x="1265" y="374.75" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="middle" fill="#576F8A">References remain linked to their source and version</text>
+<polyline points="1265,390 1265,431" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polyline points="915,431 1835,431" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polyline points="915,431 915,486" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polygon points="915,486 922.0,471.0 908.0,471.0" fill="#367FCC"/>
+<polyline points="1375,431 1375,486" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polygon points="1375,486 1382.0,471.0 1368.0,471.0" fill="#367FCC"/>
+<polyline points="1835,431 1835,486" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polygon points="1835,486 1842.0,471.0 1828.0,471.0" fill="#367FCC"/>
+<text x="735" y="279.24" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" text-anchor="start" fill="#367FCC">01  Independent assessment in parallel</text>
+<rect x="710" y="486" width="410" height="190" rx="15" fill="white" stroke="#CADCEE" stroke-width="2"/>
+<rect x="733" y="507" width="47" height="47" rx="12" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="756.5" y="539.9" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" text-anchor="middle" fill="white">A</text>
+<text x="798" y="539.07" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="700" text-anchor="start" fill="#17365A">Anticoagulation</text>
+<text x="734" y="599.41" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">Benefit, treatment stage</text>
+<text x="734" y="638.41" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">and duration</text>
+<polyline points="915,676 915,718" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<rect x="1170" y="486" width="410" height="190" rx="15" fill="white" stroke="#CADCEE" stroke-width="2"/>
+<rect x="1193" y="507" width="47" height="47" rx="12" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="1216.5" y="539.9" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" text-anchor="middle" fill="white">B</text>
+<text x="1258" y="539.07" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="700" text-anchor="start" fill="#17365A">Medication safety</text>
+<text x="1194" y="599.41" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">Drug eligibility, dosing</text>
+<text x="1194" y="638.41" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">and interactions</text>
+<polyline points="1375,676 1375,718" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<rect x="1630" y="486" width="410" height="190" rx="15" fill="white" stroke="#CADCEE" stroke-width="2"/>
+<rect x="1653" y="507" width="47" height="47" rx="12" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="1676.5" y="539.9" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" text-anchor="middle" fill="white">C</text>
+<text x="1718" y="539.07" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="700" text-anchor="start" fill="#17365A">Bleeding risk</text>
+<text x="1654" y="599.41" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">Bleeding factors, patient</text>
+<text x="1654" y="638.41" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">constraints and monitoring</text>
+<polyline points="1835,676 1835,718" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polyline points="915,718 1835,718" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polyline points="1365,718 1365,765" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polygon points="1365,765 1372.0,750.0 1358.0,750.0" fill="#367FCC"/>
+<rect x="985" y="765" width="760" height="123" rx="15" fill="#EAF3FE" stroke="#CADCEE" stroke-width="2"/>
+<rect x="1010" y="791" width="47" height="47" rx="12" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="1033.5" y="823.9" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" text-anchor="middle" fill="white">D</text>
+<text x="1084" y="814.22" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" text-anchor="start" fill="#17365A">Coordinator synthesis</text>
+<text x="1084" y="860.75" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start" fill="#576F8A">Shared plan + role sections + explicit assumptions</text>
+<polyline points="1365,888 1365,968" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polygon points="1365,968 1372.0,953.0 1358.0,953.0" fill="#367FCC"/>
+<text x="835" y="952.24" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" text-anchor="start" fill="#367FCC">02  Parallel section review</text>
+<rect x="835" y="968" width="940" height="150" rx="15" fill="white" stroke="#CADCEE" stroke-width="2"/>
+<rect x="860" y="990" width="47" height="47" rx="12" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="883.5" y="1022.9" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" text-anchor="middle" fill="white">A</text>
+<text x="923" y="1023.58" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700" text-anchor="start" fill="#17365A">Anticoagulation</text>
+<rect x="1165" y="990" width="47" height="47" rx="12" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="1188.5" y="1022.9" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" text-anchor="middle" fill="white">B</text>
+<text x="1228" y="1023.58" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700" text-anchor="start" fill="#17365A">Medication safety</text>
+<rect x="1470" y="990" width="47" height="47" rx="12" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="1493.5" y="1022.9" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" text-anchor="middle" fill="white">C</text>
+<text x="1533" y="1023.58" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700" text-anchor="start" fill="#17365A">Bleeding risk</text>
+<text x="1305" y="1090.75" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="middle" fill="#576F8A">First pass: A + B + C  |  Later passes: affected roles only</text>
+<polyline points="1305,1118 1305,1162" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polygon points="1305,1162 1312.0,1147.0 1298.0,1147.0" fill="#367FCC"/>
+<polygon points="1305,1162 1490,1230 1305,1298 1120,1230" fill="#EAF3FE" stroke="#367FCC" stroke-width="2.5"/>
+<text x="1305" y="1238.24" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" text-anchor="middle" fill="#17365A">Review status</text>
+<polyline points="1490,1230 1805,1230 1805,1262 2000,1262 2000,1226" fill="none" stroke="#215CA1" stroke-width="3.5" stroke-linejoin="round"/>
+<polygon points="2000,1226 1993.0,1241.0 2007.0,1241.0" fill="#215CA1"/>
+<text x="1560" y="1213.75" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="start" fill="#215CA1">Changes needed</text>
+<rect x="1830" y="973" width="355" height="253" rx="15" fill="#EAF3FE" stroke="#CADCEE" stroke-width="2"/>
+<rect x="1852" y="996" width="47" height="47" rx="12" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="1875.5" y="1028.9" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" text-anchor="middle" fill="white">D</text>
+<text x="1915" y="1026.41" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#17365A">Targeted revision</text>
+<text x="1853" y="1084.75" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start" fill="#576F8A">Resolve specific issues</text>
+<text x="1853" y="1119.75" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start" fill="#576F8A">Supplement retrieval</text>
+<text x="1853" y="1154.75" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start" fill="#576F8A">Update affected sections</text>
+<text x="1853" y="1189.75" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start" fill="#576F8A">Retain other approvals</text>
+<polyline points="2000,973 2000,928 1680,928 1680,968" fill="none" stroke="#215CA1" stroke-width="4" stroke-linejoin="round"/>
+<polygon points="1680,968 1687.0,953.0 1673.0,953.0" fill="#215CA1"/>
+<text x="1840" y="914.92" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700" text-anchor="middle" fill="#215CA1">Re-review affected roles</text>
+<text x="1850" y="1344.92" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700" text-anchor="start" fill="#215CA1">Plan / assumptions changed?</text>
+<text x="1850" y="1381.92" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" text-anchor="start" fill="#576F8A">Re-review A, B and C.</text>
+<polyline points="1120,1230 815,1230" fill="none" stroke="#899AAC" stroke-width="2.7" stroke-linejoin="round" stroke-dasharray="10 7"/>
+<polygon points="815,1230 830.0,1237.0 830.0,1223.0" fill="#899AAC"/>
+<text x="885" y="1214.75" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start" fill="#576F8A">Stop criteria</text>
+<rect x="655" y="1010" width="160" height="413" rx="12" fill="#F8FAFC" stroke="#DCE4ED" stroke-width="2" stroke-dasharray="9 6"/>
+<text x="735" y="1050.75" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="middle" fill="#17365A">Human</text>
+<text x="735" y="1084.75" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="middle" fill="#17365A">review</text>
+<text x="735" y="1141.43" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="400" text-anchor="middle" fill="#576F8A">Unresolved</text>
+<text x="735" y="1171.43" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="400" text-anchor="middle" fill="#576F8A">objections</text>
+<text x="735" y="1230.43" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="400" text-anchor="middle" fill="#576F8A">Revision limit</text>
+<text x="735" y="1260.43" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="400" text-anchor="middle" fill="#576F8A">(up to 3)</text>
+<text x="735" y="1319.43" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="400" text-anchor="middle" fill="#576F8A">No change /</text>
+<text x="735" y="1349.43" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="400" text-anchor="middle" fill="#576F8A">call failure</text>
+<polyline points="1305,1298 1305,1352" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polygon points="1305,1352 1312.0,1337.0 1298.0,1337.0" fill="#367FCC"/>
+<text x="1340" y="1329.92" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700" text-anchor="start" fill="#367FCC">Accept, including explicit conditions</text>
+<rect x="880" y="1352" width="865" height="115" rx="15" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="1312" y="1400.22" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" text-anchor="middle" fill="white">Reviewed recommendation</text>
+<text x="1312" y="1442.75" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="middle" fill="#EDF5FF">Reviewed draft + conditions + citations + revision trail</text>
+<text x="1312" y="1489.09" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="400" text-anchor="middle" fill="#576F8A">Available for physician review and sign-off</text>
+<polyline points="1312,1500 1312,1540" fill="none" stroke="#367FCC" stroke-width="4" stroke-linejoin="round"/>
+<polygon points="1312,1540 1319.0,1525.0 1305.0,1525.0" fill="#367FCC"/>
+<polyline points="1312,1540 1312,1612 415,1612 415,1637" fill="none" stroke="#367FCC" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="415,1637 422.0,1622.0 408.0,1622.0" fill="#367FCC"/>
+<rect x="90" y="1637" width="650" height="210" rx="15" fill="white" stroke="#CADCEE" stroke-width="2"/>
+<rect x="90" y="1637" width="6" height="210" rx="3" fill="#367FCC" stroke="#367FCC" stroke-width="0"/>
+<text x="114" y="1684.73" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start" fill="#17365A">Physician review</text>
+<text x="114" y="1732.41" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">Recommendation + explicit assumptions</text>
+<text x="114" y="1772.41" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">Accept, amend or reject</text>
+<text x="114" y="1812.41" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">No need to complete every field</text>
+<polyline points="740,1742 795,1742" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round" stroke-dasharray="10 7"/>
+<polygon points="795,1742 780.0,1735.0 780.0,1749.0" fill="#367FCC"/>
+<rect x="795" y="1637" width="650" height="210" rx="15" fill="white" stroke="#CADCEE" stroke-width="2"/>
+<rect x="795" y="1637" width="6" height="210" rx="3" fill="#367FCC" stroke="#367FCC" stroke-width="0"/>
+<text x="819" y="1684.73" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start" fill="#17365A">Information follow-up</text>
+<text x="819" y="1732.41" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">Provide data / confirm absent</text>
+<text x="819" y="1772.41" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">Mark not relevant / unknown</text>
+<text x="819" y="1812.41" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">Upload records when available</text>
+<polyline points="1445,1742 1500,1742" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round" stroke-dasharray="10 7"/>
+<polygon points="1500,1742 1485.0,1735.0 1485.0,1749.0" fill="#367FCC"/>
+<rect x="1500" y="1637" width="690" height="210" rx="15" fill="#EAF3FE" stroke="#CADCEE" stroke-width="2"/>
+<rect x="1500" y="1637" width="6" height="210" rx="3" fill="#367FCC" stroke="#367FCC" stroke-width="0"/>
+<text x="1524" y="1684.73" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start" fill="#17365A">Updated recommendation</text>
+<text x="1524" y="1732.41" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">Apply explicit clinician responses</text>
+<text x="1524" y="1772.41" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">Repeat RAG and targeted review</text>
+<text x="1524" y="1812.41" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">Retain the original report</text>
+<text x="95" y="1890.75" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start" fill="#576F8A">Routine gaps are optional. Missing facts remain unknown; decision-changing gaps become assumptions.</text>
+<polyline points="2190,1742 2245,1742 2245,342 1795,342" fill="none" stroke="#215CA1" stroke-width="3" stroke-linejoin="round" stroke-dasharray="10 7"/>
+<polygon points="1795,342 1810.0,349.0 1810.0,335.0" fill="#215CA1"/>
+<rect x="90" y="2057" width="650" height="201" rx="15" fill="white" stroke="#CADCEE" stroke-width="2"/>
+<rect x="90" y="2057" width="6" height="201" rx="3" fill="#367FCC" stroke="#367FCC" stroke-width="0"/>
+<text x="114" y="2104.73" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start" fill="#17365A">Model comparisons</text>
+<text x="114" y="2153.24" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="400" text-anchor="start" fill="#576F8A">LLM alone  /  single-agent RAG</text>
+<text x="114" y="2193.24" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="400" text-anchor="start" fill="#576F8A">Parallel agents without iterative review</text>
+<text x="114" y="2233.24" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="400" text-anchor="start" fill="#576F8A">Full system with targeted revision</text>
+<polyline points="740,2157 795,2157" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polygon points="795,2157 780.0,2150.0 780.0,2164.0" fill="#367FCC"/>
+<rect x="795" y="2057" width="650" height="201" rx="15" fill="white" stroke="#CADCEE" stroke-width="2"/>
+<rect x="795" y="2057" width="6" height="201" rx="3" fill="#367FCC" stroke="#367FCC" stroke-width="0"/>
+<text x="819" y="2104.73" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start" fill="#17365A">Blinded clinical review</text>
+<text x="819" y="2152.41" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">Guideline concordance &amp; accuracy</text>
+<text x="819" y="2192.41" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">Completeness, safety &amp; citation support</text>
+<text x="819" y="2232.41" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">Independent ratings and adjudication</text>
+<polyline points="1445,2157 1500,2157" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polygon points="1500,2157 1485.0,2150.0 1485.0,2164.0" fill="#367FCC"/>
+<rect x="1500" y="2057" width="690" height="201" rx="15" fill="white" stroke="#CADCEE" stroke-width="2"/>
+<rect x="1500" y="2057" width="6" height="201" rx="3" fill="#367FCC" stroke="#367FCC" stroke-width="0"/>
+<text x="1524" y="2104.73" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start" fill="#17365A">Outcomes &amp; process measures</text>
+<text x="1524" y="2152.41" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">Safety errors and recommendation quality</text>
+<text x="1524" y="2192.41" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">Errors corrected / newly introduced</text>
+<text x="1524" y="2232.41" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">Latency, model calls and token usage</text>
+<text x="95" y="2298.75" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start" fill="#576F8A">Paired case-level comparisons  |  Ablation analysis  |  Prespecified clinical subgroups</text>
+<text x="65" y="2364.09" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="400" text-anchor="start" fill="#576F8A">VTE: venous thromboembolism   DVT: deep vein thrombosis   PE: pulmonary embolism   RAG: retrieval-augmented generation</text>
+</svg>

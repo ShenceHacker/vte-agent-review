@@ -1,0 +1,207 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2280" height="2390" viewBox="0 0 2280 2390">
+<title>VTE 研究流程图（中文版）</title>
+<desc>病例与知识库、按角色检索、并行初判、协调汇总、分工审核与定向修订，以及拟定对比评价。</desc>
+<rect x="0" y="0" width="2280" height="2390" rx="0" fill="white" stroke="white" stroke-width="0"/>
+<text x="65" y="86.66999999999999" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="49" font-weight="700" text-anchor="start" fill="#17365A">VTE 抗凝决策：RAG、多智能体审核与资料补充</text>
+<text x="65" y="142.07" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="29" font-weight="400" text-anchor="start" fill="#576F8A">基于现有资料生成有证据支持的建议，并明确适用前提</text>
+<rect x="60" y="185" width="480" height="1315" rx="20" fill="#F5F9FE" stroke="#CADCEE" stroke-width="2"/>
+<rect x="84" y="209" width="42" height="42" rx="10" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="105" y="240.73" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="31" font-weight="700" text-anchor="middle" fill="white">a</text>
+<text x="144" y="240.56" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="32" font-weight="700" text-anchor="start" fill="#17365A">病例与证据</text>
+<rect x="570" y="185" width="1650" height="1315" rx="20" fill="#F5F9FE" stroke="#CADCEE" stroke-width="2"/>
+<rect x="594" y="209" width="42" height="42" rx="10" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="615" y="240.73" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="31" font-weight="700" text-anchor="middle" fill="white">b</text>
+<text x="654" y="240.56" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="32" font-weight="700" text-anchor="start" fill="#17365A">多智能体审核与修订</text>
+<rect x="60" y="1540" width="2160" height="375" rx="20" fill="#F5F9FE" stroke="#CADCEE" stroke-width="2"/>
+<rect x="84" y="1564" width="42" height="42" rx="10" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="105" y="1595.73" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="31" font-weight="700" text-anchor="middle" fill="white">c</text>
+<text x="144" y="1595.56" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="32" font-weight="700" text-anchor="start" fill="#17365A">临床使用与资料补充</text>
+<rect x="60" y="1960" width="2160" height="355" rx="20" fill="#F5F9FE" stroke="#CADCEE" stroke-width="2"/>
+<rect x="84" y="1984" width="42" height="42" rx="10" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="105" y="2015.73" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="31" font-weight="700" text-anchor="middle" fill="white">d</text>
+<text x="144" y="2015.56" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="32" font-weight="700" text-anchor="start" fill="#17365A">拟定对比评价</text>
+<rect x="105" y="298" width="390" height="165" rx="15" fill="white" stroke="#CADCEE" stroke-width="2"/>
+<rect x="105" y="298" width="6" height="165" rx="3" fill="#367FCC" stroke="#367FCC" stroke-width="0"/>
+<text x="129" y="345.73" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="31" font-weight="700" text-anchor="start" fill="#17365A">VTE 病例</text>
+<text x="129" y="394.24" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" text-anchor="start" fill="#576F8A">DVT 和／或 PE</text>
+<text x="129" y="434.24" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" text-anchor="start" fill="#576F8A">面向具体决策的病例集</text>
+<polyline points="300,463 300,520" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polygon points="300,520 307.0,505.0 293.0,505.0" fill="#367FCC"/>
+<rect x="105" y="520" width="390" height="233" rx="15" fill="white" stroke="#CADCEE" stroke-width="2"/>
+<rect x="105" y="520" width="6" height="233" rx="3" fill="#367FCC" stroke="#367FCC" stroke-width="0"/>
+<text x="129" y="567.73" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="31" font-weight="700" text-anchor="start" fill="#17365A">病例整理</text>
+<text x="129" y="614.58" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="400" text-anchor="start" fill="#576F8A">去标识化处理</text>
+<text x="129" y="654.58" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="400" text-anchor="start" fill="#576F8A">已有临床信息</text>
+<text x="129" y="694.58" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="400" text-anchor="start" fill="#576F8A">决策时点与具体问题</text>
+<text x="129" y="734.58" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="400" text-anchor="start" fill="#576F8A">区分已知信息与缺项</text>
+<rect x="105" y="860" width="390" height="237" rx="15" fill="white" stroke="#CADCEE" stroke-width="2"/>
+<rect x="105" y="860" width="6" height="237" rx="3" fill="#367FCC" stroke="#367FCC" stroke-width="0"/>
+<text x="129" y="907.73" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="31" font-weight="700" text-anchor="start" fill="#17365A">知识库</text>
+<text x="129" y="954.58" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="400" text-anchor="start" fill="#576F8A">临床指南／本地规范</text>
+<text x="129" y="994.58" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="400" text-anchor="start" fill="#576F8A">药品说明书</text>
+<text x="129" y="1034.58" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="400" text-anchor="start" fill="#576F8A">来源、版本及角色标签</text>
+<text x="129" y="1074.58" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="400" text-anchor="start" fill="#576F8A">文档分段</text>
+<polyline points="300,1097 300,1150" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polygon points="300,1150 307.0,1135.0 293.0,1135.0" fill="#367FCC"/>
+<rect x="105" y="1150" width="390" height="237" rx="15" fill="#EAF3FE" stroke="#CADCEE" stroke-width="2"/>
+<rect x="105" y="1150" width="6" height="237" rx="3" fill="#367FCC" stroke="#367FCC" stroke-width="0"/>
+<text x="129" y="1197.73" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="31" font-weight="700" text-anchor="start" fill="#17365A">按角色检索</text>
+<text x="129" y="1244.58" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="400" text-anchor="start" fill="#576F8A">病例信息＋角色查询</text>
+<text x="129" y="1284.58" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="400" text-anchor="start" fill="#576F8A">FTS5 / BM25；top-k＝4</text>
+<text x="129" y="1324.58" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="400" text-anchor="start" fill="#576F8A">带来源标记的证据片段</text>
+<text x="129" y="1364.58" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="400" text-anchor="start" fill="#576F8A">固定本次审核的证据快照</text>
+<polyline points="105,694 80,694 80,1260 105,1260" fill="none" stroke="#367FCC" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="105,1260 90.0,1253.0 90.0,1267.0" fill="#367FCC"/>
+<polyline points="495,625 600,625 600,326 735,326" fill="none" stroke="#367FCC" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="735,326 720.0,319.0 720.0,333.0" fill="#367FCC"/>
+<polyline points="495,1260 625,1260 625,353 735,353" fill="none" stroke="#367FCC" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="735,353 720.0,346.0 720.0,360.0" fill="#367FCC"/>
+<text x="105" y="1443.09" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" text-anchor="start" fill="#576F8A">同一病例，按角色分配证据。</text>
+<rect x="735" y="292" width="1060" height="98" rx="15" fill="#EAF3FE" stroke="#CADCEE" stroke-width="2"/>
+<text x="1265" y="336.39" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="33" font-weight="700" text-anchor="middle" fill="#17365A">结构化病例信息＋检索证据</text>
+<text x="1265" y="374.75" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="400" text-anchor="middle" fill="#576F8A">每条引用均保留来源与版本</text>
+<polyline points="1265,390 1265,431" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polyline points="915,431 1835,431" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polyline points="915,431 915,486" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polygon points="915,486 922.0,471.0 908.0,471.0" fill="#367FCC"/>
+<polyline points="1375,431 1375,486" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polygon points="1375,486 1382.0,471.0 1368.0,471.0" fill="#367FCC"/>
+<polyline points="1835,431 1835,486" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polygon points="1835,486 1842.0,471.0 1828.0,471.0" fill="#367FCC"/>
+<text x="735" y="279.24" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="700" text-anchor="start" fill="#367FCC">01  各角色并行独立初判</text>
+<rect x="710" y="486" width="410" height="190" rx="15" fill="white" stroke="#CADCEE" stroke-width="2"/>
+<rect x="733" y="507" width="47" height="47" rx="12" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="756.5" y="539.9" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="30" font-weight="700" text-anchor="middle" fill="white">A</text>
+<text x="798" y="539.07" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="29" font-weight="700" text-anchor="start" fill="#17365A">抗凝评估</text>
+<text x="734" y="599.41" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">抗凝获益、治疗阶段</text>
+<text x="734" y="638.41" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">与治疗时长</text>
+<polyline points="915,676 915,718" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<rect x="1170" y="486" width="410" height="190" rx="15" fill="white" stroke="#CADCEE" stroke-width="2"/>
+<rect x="1193" y="507" width="47" height="47" rx="12" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="1216.5" y="539.9" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="30" font-weight="700" text-anchor="middle" fill="white">B</text>
+<text x="1258" y="539.07" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="29" font-weight="700" text-anchor="start" fill="#17365A">用药安全</text>
+<text x="1194" y="599.41" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">药物适用性、剂量</text>
+<text x="1194" y="638.41" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">与相互作用</text>
+<polyline points="1375,676 1375,718" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<rect x="1630" y="486" width="410" height="190" rx="15" fill="white" stroke="#CADCEE" stroke-width="2"/>
+<rect x="1653" y="507" width="47" height="47" rx="12" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="1676.5" y="539.9" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="30" font-weight="700" text-anchor="middle" fill="white">C</text>
+<text x="1718" y="539.07" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="29" font-weight="700" text-anchor="start" fill="#17365A">出血风险</text>
+<text x="1654" y="599.41" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">出血因素、患者约束</text>
+<text x="1654" y="638.41" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">与监测需求</text>
+<polyline points="1835,676 1835,718" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polyline points="915,718 1835,718" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polyline points="1365,718 1365,765" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polygon points="1365,765 1372.0,750.0 1358.0,750.0" fill="#367FCC"/>
+<rect x="985" y="765" width="760" height="123" rx="15" fill="#EAF3FE" stroke="#CADCEE" stroke-width="2"/>
+<rect x="1010" y="791" width="47" height="47" rx="12" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="1033.5" y="823.9" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="30" font-weight="700" text-anchor="middle" fill="white">D</text>
+<text x="1084" y="814.22" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="34" font-weight="700" text-anchor="start" fill="#17365A">协调汇总</text>
+<text x="1084" y="860.75" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="400" text-anchor="start" fill="#576F8A">共同方案＋角色分段＋明确适用前提</text>
+<polyline points="1365,888 1365,968" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polygon points="1365,968 1372.0,953.0 1358.0,953.0" fill="#367FCC"/>
+<text x="835" y="952.24" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="700" text-anchor="start" fill="#367FCC">02  按职责并行审核</text>
+<rect x="835" y="968" width="940" height="150" rx="15" fill="white" stroke="#CADCEE" stroke-width="2"/>
+<rect x="860" y="990" width="47" height="47" rx="12" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="883.5" y="1022.9" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="30" font-weight="700" text-anchor="middle" fill="white">A</text>
+<text x="923" y="1023.58" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" text-anchor="start" fill="#17365A">抗凝评估</text>
+<rect x="1165" y="990" width="47" height="47" rx="12" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="1188.5" y="1022.9" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="30" font-weight="700" text-anchor="middle" fill="white">B</text>
+<text x="1228" y="1023.58" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" text-anchor="start" fill="#17365A">用药安全</text>
+<rect x="1470" y="990" width="47" height="47" rx="12" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="1493.5" y="1022.9" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="30" font-weight="700" text-anchor="middle" fill="white">C</text>
+<text x="1533" y="1023.58" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="26" font-weight="700" text-anchor="start" fill="#17365A">出血风险</text>
+<text x="1305" y="1090.75" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="400" text-anchor="middle" fill="#576F8A">首轮：A＋B＋C  |  后续：仅受影响角色复核</text>
+<polyline points="1305,1118 1305,1162" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polygon points="1305,1162 1312.0,1147.0 1298.0,1147.0" fill="#367FCC"/>
+<polygon points="1305,1162 1490,1230 1305,1298 1120,1230" fill="#EAF3FE" stroke="#367FCC" stroke-width="2.5"/>
+<text x="1305" y="1238.24" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="700" text-anchor="middle" fill="#17365A">审核状态</text>
+<polyline points="1490,1230 1805,1230 1805,1262 2000,1262 2000,1226" fill="none" stroke="#215CA1" stroke-width="3.5" stroke-linejoin="round"/>
+<polygon points="2000,1226 1993.0,1241.0 2007.0,1241.0" fill="#215CA1"/>
+<text x="1560" y="1213.75" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="700" text-anchor="start" fill="#215CA1">需要修改</text>
+<rect x="1830" y="973" width="355" height="253" rx="15" fill="#EAF3FE" stroke="#CADCEE" stroke-width="2"/>
+<rect x="1852" y="996" width="47" height="47" rx="12" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="1875.5" y="1028.9" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="30" font-weight="700" text-anchor="middle" fill="white">D</text>
+<text x="1915" y="1026.41" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="700" text-anchor="start" fill="#17365A">定向修订</text>
+<text x="1853" y="1084.75" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="400" text-anchor="start" fill="#576F8A">处理具体问题</text>
+<text x="1853" y="1119.75" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="400" text-anchor="start" fill="#576F8A">按问题补充检索</text>
+<text x="1853" y="1154.75" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="400" text-anchor="start" fill="#576F8A">更新受影响内容</text>
+<text x="1853" y="1189.75" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="400" text-anchor="start" fill="#576F8A">保留其余有效审核意见</text>
+<polyline points="2000,973 2000,928 1680,928 1680,968" fill="none" stroke="#215CA1" stroke-width="4" stroke-linejoin="round"/>
+<polygon points="1680,968 1687.0,953.0 1673.0,953.0" fill="#215CA1"/>
+<text x="1840" y="914.92" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" text-anchor="middle" fill="#215CA1">仅受影响角色再次复核</text>
+<text x="1850" y="1344.92" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" text-anchor="start" fill="#215CA1">方案或适用前提改变？</text>
+<text x="1850" y="1381.92" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="400" text-anchor="start" fill="#576F8A">则 A、B、C 全部复核。</text>
+<polyline points="1120,1230 815,1230" fill="none" stroke="#899AAC" stroke-width="2.7" stroke-linejoin="round" stroke-dasharray="10 7"/>
+<polygon points="815,1230 830.0,1237.0 830.0,1223.0" fill="#899AAC"/>
+<text x="885" y="1214.75" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="400" text-anchor="start" fill="#576F8A">满足停止条件</text>
+<rect x="655" y="1010" width="160" height="413" rx="12" fill="#F8FAFC" stroke="#DCE4ED" stroke-width="2" stroke-dasharray="9 6"/>
+<text x="735" y="1050.75" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="700" text-anchor="middle" fill="#17365A">人工</text>
+<text x="735" y="1084.75" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="700" text-anchor="middle" fill="#17365A">复核</text>
+<text x="735" y="1141.43" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="21" font-weight="400" text-anchor="middle" fill="#576F8A">尚未解决的</text>
+<text x="735" y="1171.43" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="21" font-weight="400" text-anchor="middle" fill="#576F8A">审核异议</text>
+<text x="735" y="1230.43" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="21" font-weight="400" text-anchor="middle" fill="#576F8A">修订次数上限</text>
+<text x="735" y="1260.43" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="21" font-weight="400" text-anchor="middle" fill="#576F8A">（最多 3 次）</text>
+<text x="735" y="1319.43" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="21" font-weight="400" text-anchor="middle" fill="#576F8A">修订无变化</text>
+<text x="735" y="1349.43" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="21" font-weight="400" text-anchor="middle" fill="#576F8A">或调用失败</text>
+<polyline points="1305,1298 1305,1352" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polygon points="1305,1352 1312.0,1337.0 1298.0,1337.0" fill="#367FCC"/>
+<text x="1340" y="1329.92" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="24" font-weight="700" text-anchor="start" fill="#367FCC">审核通过（可附明确条件）</text>
+<rect x="880" y="1352" width="865" height="115" rx="15" fill="#367FCC" stroke="#367FCC" stroke-width="2"/>
+<text x="1312" y="1400.22" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="34" font-weight="700" text-anchor="middle" fill="white">经审核的建议</text>
+<text x="1312" y="1442.75" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="400" text-anchor="middle" fill="#EDF5FF">已审草案＋适用前提＋引文＋修订记录</text>
+<text x="1312" y="1489.09" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" text-anchor="middle" fill="#576F8A">供医师进一步审核与签署</text>
+<polyline points="1312,1500 1312,1540" fill="none" stroke="#367FCC" stroke-width="4" stroke-linejoin="round"/>
+<polygon points="1312,1540 1319.0,1525.0 1305.0,1525.0" fill="#367FCC"/>
+<polyline points="1312,1540 1312,1612 415,1612 415,1637" fill="none" stroke="#367FCC" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="415,1637 422.0,1622.0 408.0,1622.0" fill="#367FCC"/>
+<rect x="90" y="1637" width="650" height="210" rx="15" fill="white" stroke="#CADCEE" stroke-width="2"/>
+<rect x="90" y="1637" width="6" height="210" rx="3" fill="#367FCC" stroke="#367FCC" stroke-width="0"/>
+<text x="114" y="1684.73" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="31" font-weight="700" text-anchor="start" fill="#17365A">医生审核</text>
+<text x="114" y="1732.41" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">临床建议＋明确适用前提</text>
+<text x="114" y="1772.41" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">采纳、修改或驳回</text>
+<text x="114" y="1812.41" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">无需等待全部资料补齐</text>
+<polyline points="740,1742 795,1742" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round" stroke-dasharray="10 7"/>
+<polygon points="795,1742 780.0,1735.0 780.0,1749.0" fill="#367FCC"/>
+<rect x="795" y="1637" width="650" height="210" rx="15" fill="white" stroke="#CADCEE" stroke-width="2"/>
+<rect x="795" y="1637" width="6" height="210" rx="3" fill="#367FCC" stroke="#367FCC" stroke-width="0"/>
+<text x="819" y="1684.73" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="31" font-weight="700" text-anchor="start" fill="#17365A">按需补充资料</text>
+<text x="819" y="1732.41" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">补充信息／确认不存在</text>
+<text x="819" y="1772.41" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">标记本次不重要／暂不清楚</text>
+<text x="819" y="1812.41" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">可获得时补传病历或检验报告</text>
+<polyline points="1445,1742 1500,1742" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round" stroke-dasharray="10 7"/>
+<polygon points="1500,1742 1485.0,1735.0 1485.0,1749.0" fill="#367FCC"/>
+<rect x="1500" y="1637" width="690" height="210" rx="15" fill="#EAF3FE" stroke="#CADCEE" stroke-width="2"/>
+<rect x="1500" y="1637" width="6" height="210" rx="3" fill="#367FCC" stroke="#367FCC" stroke-width="0"/>
+<text x="1524" y="1684.73" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="31" font-weight="700" text-anchor="start" fill="#17365A">生成新版建议</text>
+<text x="1524" y="1732.41" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">应用医生明确确认的信息</text>
+<text x="1524" y="1772.41" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">重新检索、评估与定向审核</text>
+<text x="1524" y="1812.41" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">保留原报告并关联新版本</text>
+<text x="95" y="1890.75" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="400" text-anchor="start" fill="#576F8A">一般缺项默认不阻断；未记录仍为未知，会改变决策的缺项写为适用前提。</text>
+<polyline points="2190,1742 2245,1742 2245,342 1795,342" fill="none" stroke="#215CA1" stroke-width="3" stroke-linejoin="round" stroke-dasharray="10 7"/>
+<polygon points="1795,342 1810.0,349.0 1810.0,335.0" fill="#215CA1"/>
+<rect x="90" y="2057" width="650" height="201" rx="15" fill="white" stroke="#CADCEE" stroke-width="2"/>
+<rect x="90" y="2057" width="6" height="201" rx="3" fill="#367FCC" stroke="#367FCC" stroke-width="0"/>
+<text x="114" y="2104.73" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="31" font-weight="700" text-anchor="start" fill="#17365A">模型对照</text>
+<text x="114" y="2153.24" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" text-anchor="start" fill="#576F8A">单独 LLM / 单智能体 RAG</text>
+<text x="114" y="2193.24" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" text-anchor="start" fill="#576F8A">并行多智能体（不循环审核）</text>
+<text x="114" y="2233.24" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" text-anchor="start" fill="#576F8A">包含定向复核的完整系统</text>
+<polyline points="740,2157 795,2157" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polygon points="795,2157 780.0,2150.0 780.0,2164.0" fill="#367FCC"/>
+<rect x="795" y="2057" width="650" height="201" rx="15" fill="white" stroke="#CADCEE" stroke-width="2"/>
+<rect x="795" y="2057" width="6" height="201" rx="3" fill="#367FCC" stroke="#367FCC" stroke-width="0"/>
+<text x="819" y="2104.73" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="31" font-weight="700" text-anchor="start" fill="#17365A">临床盲法评价</text>
+<text x="819" y="2152.41" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">指南一致性与准确性</text>
+<text x="819" y="2192.41" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">全面性、安全性与引文支持</text>
+<text x="819" y="2232.41" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">独立评分与分歧裁决</text>
+<polyline points="1445,2157 1500,2157" fill="none" stroke="#367FCC" stroke-width="3.5" stroke-linejoin="round"/>
+<polygon points="1500,2157 1485.0,2150.0 1485.0,2164.0" fill="#367FCC"/>
+<rect x="1500" y="2057" width="690" height="201" rx="15" fill="white" stroke="#CADCEE" stroke-width="2"/>
+<rect x="1500" y="2057" width="6" height="201" rx="3" fill="#367FCC" stroke="#367FCC" stroke-width="0"/>
+<text x="1524" y="2104.73" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="31" font-weight="700" text-anchor="start" fill="#17365A">质量与过程指标</text>
+<text x="1524" y="2152.41" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">安全错误与建议质量</text>
+<text x="1524" y="2192.41" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">纠正的错误／新引入的错误</text>
+<text x="1524" y="2232.41" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="27" font-weight="400" text-anchor="start" fill="#576F8A">耗时、模型调用次数与 token 用量</text>
+<text x="95" y="2298.75" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="400" text-anchor="start" fill="#576F8A">病例内配对比较  |  消融分析  |  预设临床亚组</text>
+<text x="65" y="2364.09" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="23" font-weight="400" text-anchor="start" fill="#576F8A">VTE：静脉血栓栓塞症    DVT：深静脉血栓形成    PE：肺栓塞    RAG：检索增强生成</text>
+</svg>
