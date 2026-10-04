@@ -1,5 +1,16 @@
 # 验证记录
 
+## 2026-10-04：v0.4.0 患者记忆、图文输入与工具会话
+
+- 接续中断时的 5 个未完成文件，原件备份在 `runs/resume-backup-20261004/`；保留 ABC 并行、D 单写者及定向复核语义。
+- `python -m unittest discover -q`：93 项通过，0 跳过。覆盖真实 function-calling 协议往返（httpx MockTransport）、Chat Completions/Responses、原图消息、工具权限/参数/轮数上限、拒绝非有限 JSON、来源隔离、计算与单位边界、患者双时间截断/追加更正、模型建议不能自升为事实、同就诊医生方案留出、标签不入模型上下文、不可变快照、DOCX/图片导入及 HTTP 接口。
+- Python 编译、JavaScript 语法、Git 空白检查通过。
+- 后台浏览器在 `runs/qa-v04` 隔离目录验证患者新增/回显、完整病例 JSON 导入、图片上传与来源日期/核对人、资料核查、研究标签保存、审核和审计显示。合成审核 `20261004T032902Z-64860ee5`：v2，9 次模拟会话，审核 ABC → A；标签保存 1 条，检查 `events.jsonl` 未包含标签内容。控制台未见 JavaScript 错误。
+- 用户指定桌面 Word 仅在临时目录做本地解析：正文 1,866 字符、6 张嵌入图片；未将原病例上传模型或复制进 Git。
+- 显式导入 4 份公开官方原件：NICE NG158、DailyMed XARELTO、Methotrexate、Sulfamethoxazole/Trimethoprim。正式本地库 4 份、386 片段，关键词检索命中已核对；标题保留 UK/US，原件、文本、URL、SHA-256 与抓取日期保存在本地 manifest。NKF 页面由浏览检索核对，但自动下载返回 403，因此未加入导入包。
+- 最终本地服务以 `--no-browser --port 8768 --runs runs` 后台运行；`/api/info` 核对 v0.4.0 与新功能列表。8767 的中途检查服务保留，请使用 8768。软件未配置真实模型名称/API key，视觉提取与工具往返均以模拟接口验证，未报告实际模型准确率或延迟。
+- 技术栈及论文方法写法更新于 [technical-stack.md](technical-stack.md)，操作方式见 [workspace-v04.md](workspace-v04.md)。
+
 ## 2026-10-03：v0.3.0 英文界面与持久知识库
 
 - 英文蓝白界面，首页四个白大褂机器人，移除原品牌副标题、宣传语与侧栏说明；新增 Knowledge base 入口。内置演示、提示模板及报告标题同步为英文，已有病例和历史数据不改写。

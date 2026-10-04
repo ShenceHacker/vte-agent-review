@@ -43,6 +43,14 @@ def report(result: dict) -> str:
     if all(v is not None for v in result["approvals"].values()):
         lines.append("- No open workflow issues.")
     lines += ["", "## Run metrics", "", "```json", json.dumps(result["metrics"], ensure_ascii=False, indent=2), "```", ""]
+    if result.get("clinical_checks"):
+        lines += ["## Clinical data checks", ""]
+        lines += [f"- {i['severity']}: {i['message']} (roles: {','.join(i['roles'])})" for i in result["clinical_checks"]["issues"]]
+    if result.get("memory_snapshot", {}).get("sha256"):
+        lines += ["", "Memory snapshot SHA-256: " + result["memory_snapshot"]["sha256"]]
+    if result.get("memory_proposals"):
+        lines += ["", "## Memory proposals awaiting human confirmation", ""]
+        lines += ["- " + p["topic"] + ": " + p["content"] for p in result["memory_proposals"]]
     return "\n".join(lines)
 
 
@@ -62,7 +70,8 @@ async def execute(args) -> int:
             raise ValueError("set VTE_API_KEY and VTE_MODEL before run")
         role_models = {r: os.environ[f"VTE_MODEL_{r}"] for r in (*ROLES, "D") if os.environ.get(f"VTE_MODEL_{r}")}
         model = ChatCompletionsModel(os.environ.get("VTE_BASE_URL", "https://api.openai.com/v1"),
-                                     key, name, role_models=role_models, timeout=args.timeout)
+                                     key, name, role_models=role_models, timeout=args.timeout,
+                                     api_style=os.environ.get("VTE_API_STYLE", "chat_completions"))
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid4().hex[:8]
     out = Path(args.output or Path("runs") / run_id).resolve()
     try:
@@ -75,7 +84,17 @@ async def execute(args) -> int:
                 stream.flush()
                 if event["event"] in {"review_round", "draft_revised", "finished"}:
                     print(json.dumps({k: v for k, v in event.items() if k not in {"draft", "input", "output"}}, ensure_ascii=False))
-            result = await Workflow(model, index, settings, on_event).run(case)
+            from .patient_memory import PatientMemory
+            from .intake import SourceStore
+            memory, sources = {"entries": []}, None
+            if args.command == "run" and case.get("patient"):
+                p = case["patient"]
+                memory = PatientMemory(Path(args.workspace) / "patients.sqlite3").snapshot(
+                    p["patient_id"], p["decision_at"], task_type=case.get("task_type", "generate_plan"), encounter_id=p["encounter_id"])
+            if args.command == "run":
+                sources = SourceStore(Path(args.workspace) / "sources")
+            (out / "memory_snapshot.json").write_text(json.dumps(memory, ensure_ascii=False, indent=2), encoding="utf-8")
+            result = await Workflow(model, index, settings, on_event, memory_snapshot=memory, sources=sources).run(case)
         (out / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
         (out / "report.md").write_text(report(result), encoding="utf-8")
         print(f"Output: {out}")
@@ -110,6 +129,7 @@ def main() -> int:
         else:
             sub.add_argument("--case", required=True)
             sub.add_argument("--evidence", required=True)
+            sub.add_argument("--workspace", default="runs", help="patient/source storage directory")
     try:
         args = parser.parse_args()
         if args.command == "gui":

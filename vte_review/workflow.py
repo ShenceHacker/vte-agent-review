@@ -15,6 +15,8 @@ from .contracts import (
 from .prompts import PROMPT_VERSION
 from .providers import Model, ProviderError
 from .retrieval import EvidenceIndex
+from .clinical import clinical_check
+from .clinical_tools import ClinicalTools
 
 
 @dataclass(frozen=True)
@@ -31,12 +33,14 @@ class Settings:
 
 class Workflow:
     def __init__(self, model: Model, evidence: EvidenceIndex, settings: Settings | None = None,
-                 on_event: Callable[[dict], None] | None = None):
+                 on_event: Callable[[dict], None] | None = None, *, memory_snapshot=None, sources=None):
         self.model = model
         self.evidence = evidence
         self.settings = settings or Settings()
         self.on_event = on_event
         self._used = False
+        self.memory = deepcopy(memory_snapshot or {"entries": []})
+        self.sources = sources
 
     def emit(self, event: str, **data):
         item = {"seq": len(self.events) + 1, "elapsed_s": round(time.perf_counter() - self.started, 4), "event": event, **deepcopy(data)}
@@ -46,14 +50,27 @@ class Workflow:
 
     async def call(self, task: str, role: str, payload: dict, validator) -> dict:
         async with self.semaphore:
+            payload = deepcopy(payload)
+            payload["clinical_checks"] = {**self.checks, "issues": [i for i in self.checks.get("issues", []) if role == "D" or role in i["roles"]]}
+            payload["memory_context"] = {k: v for k, v in self.memory.items() if k != "entries"}
+            session = ClinicalTools(role, self.case, self.evidence, memory=self.memory, sources=self.sources,
+                                    emit=self.emit, top_k=self.settings.top_k)
             self.emit("call_started", task=task, role=role, version=self.version, input=payload)
             started = time.perf_counter()
             try:
-                reply = await asyncio.wait_for(self.model.complete(task, role, deepcopy(payload)), self.settings.call_timeout)
-                result = validator(reply.data, {d["id"] for d in payload["evidence"]})
+                invoke = getattr(self.model, "complete_with_tools", None)
+                call = invoke(task, role, deepcopy(payload), session) if invoke else self.model.complete(task, role, deepcopy(payload))
+                reply = await asyncio.wait_for(call, self.settings.call_timeout)
+                self.pool.update(session.retrieved)
+                if role in ROLES:
+                    previous = {d["id"]: d for d in self.role_evidence[role]}
+                    previous.update(session.retrieved)
+                    self.role_evidence[role] = list(previous.values())
+                self.proposals.extend(session.proposals)
+                result = validator(reply.data, {d["id"] for d in payload["evidence"]} | set(session.retrieved))
                 self.emit("call_completed", task=task, role=role, version=self.version,
                           duration_s=round(time.perf_counter() - started, 4), model=reply.model,
-                          usage=reply.usage, output=result)
+                          usage=reply.usage, requests=reply.requests, output=result)
                 return result
             except Exception as exc:
                 # Persist only controlled errors; third-party exceptions may contain credentials.
@@ -102,9 +119,12 @@ class Workflow:
             "approvals": self.approvals, "reviews": self.reviews,
             "draft": self.draft, "final": self.draft if status == "approved" else None,
             "evidence": list(self.pool.values()), "events": self.events,
+            "clinical_checks": self.checks, "memory_snapshot": self.memory, "memory_proposals": self.proposals,
             "metrics": {
                 "elapsed_s": round(time.perf_counter() - self.started, 4),
                 "calls": sum(e["event"] == "call_started" for e in self.events),
+                "model_requests": sum(e.get("requests", 0) for e in self.events if e["event"] == "call_completed"),
+                "tool_calls": sum(e["event"] == "tool_completed" for e in self.events),
                 "review_calls": sum(e["event"] == "call_started" and e["task"] == "review" for e in self.events),
                 "reported_total_tokens": sum(e.get("usage", {}).get("total_tokens", 0) for e in self.events),
                 "usage_reported_calls": sum(bool(e.get("usage")) for e in self.events if e["event"] == "call_completed"),
@@ -116,6 +136,9 @@ class Workflow:
             raise RuntimeError("create a fresh Workflow for each case")
         self._used = True
         self.case = validate_case(case)
+        # Excluded observations stay in case.json for auditing, never in model inputs.
+        if "observations" in self.case:
+            self.case["observations"] = [o for o in self.case["observations"] if o["status"] != "excluded"]
         self.started = time.perf_counter()
         self.events = []
         self.version = 0
@@ -124,9 +147,34 @@ class Workflow:
         self.reviews = {}
         self.approvals = {role: None for role in ROLES}
         self.pool = {}
+        self.proposals = []
+        self.checks = clinical_check(self.case) if not getattr(self.model, "is_demo", False) or "patient" in self.case else {}
         self.semaphore = asyncio.Semaphore(self.settings.max_concurrency)
         self.emit("started", case_id=self.case["case_id"], settings=asdict(self.settings), prompt_version=PROMPT_VERSION)
         try:
+            if self.case.get("patient"):
+                from .patient_memory import instant
+                patient = self.case["patient"]
+                if self.memory.get("entries"):
+                    if (self.memory.get("patient_id") != patient["patient_id"]
+                            or instant(self.memory.get("as_of")) != instant(patient["decision_at"])
+                            or self.memory.get("task_type") != self.case.get("task_type", "generate_plan")
+                            or self.memory.get("encounter_id") != patient["encounter_id"]):
+                        raise ContractError("Memory snapshot does not match the current patient/time/task")
+                    for entry in self.memory["entries"]:
+                        if entry.get("patient_id") != patient["patient_id"] or entry.get("kind") == "model_suggestion" or entry.get("status") != "confirmed" or max(instant(entry["occurred_at"]), instant(entry["available_at"])) > instant(patient["decision_at"]):
+                            raise ContractError("Invalid entry in frozen patient memory")
+            if self.case.get("source_ids") and not self.sources:
+                raise ContractError("Attached source storage is required")
+            if self.sources and self.case.get("source_ids"):
+                bundle = self.sources.bundle(self.case["source_ids"])
+                allowed = set(self.case["source_ids"]) | set(bundle["image_ids"])
+                if any(o["source_id"] not in allowed for o in self.case.get("observations", [])):
+                    raise ContractError("Observation source is not attached to this case")
+            if self.checks:
+                self.emit("clinical_checked", report=self.checks)
+            if self.checks.get("input_blocked"):
+                return self.finish("needs_human_review", "source_verification_required")
             self.role_evidence = {r: self.retrieve(r) for r in ROLES}
             missing = [r for r in ROLES if not self.role_evidence[r]]
             if missing:
@@ -156,6 +204,8 @@ class Workflow:
                     self.approvals[role] = self.version if reply["verdict"] == "approve" else None
                 pending = {r for r in ROLES if self.approvals[r] is None}
                 if not pending:
+                    if self.checks.get("blocking"):
+                        return self.finish("needs_human_review", "clinical_data_requires_review")
                     # Output the exact approved draft: no unreviewed final rewrite by D.
                     return self.finish("approved", "all_required_reviews_passed")
                 if any(self.reviews[r]["verdict"] == "needs_information" for r in pending):

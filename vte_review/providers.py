@@ -15,6 +15,7 @@ class ModelReply:
     data: dict
     model: str
     usage: dict = field(default_factory=dict)
+    requests: int = 1
 
 
 class Model(Protocol):
@@ -25,9 +26,16 @@ class ProviderError(RuntimeError):
     pass
 
 
+def parse_json(value):
+    def invalid_constant(_):
+        raise ValueError("Non-finite JSON number")
+    return json.loads(value, parse_constant=invalid_constant)
+
+
 class ChatCompletionsModel:
     def __init__(self, base_url: str, api_key: str, model: str, *, role_models: dict | None = None,
-                 timeout: float = 60, max_tokens: int = 3000, transport=None):
+                 timeout: float = 60, max_tokens: int = 3000, transport=None,
+                 api_style: str = "chat_completions", max_tool_rounds: int = 4):
         import httpx
 
         parsed = urlparse(base_url)
@@ -40,6 +48,9 @@ class ChatCompletionsModel:
         self.model = model
         self.role_models = role_models or {}
         self.max_tokens = max_tokens
+        if api_style not in {"chat_completions", "responses"} or not 1 <= max_tool_rounds <= 8:
+            raise ValueError("Invalid API style or tool-round limit")
+        self.api_style, self.max_tool_rounds = api_style, max_tool_rounds
         self.client = httpx.AsyncClient(
             base_url=base_url.rstrip("/") + "/",
             headers={"Authorization": "Bearer " + api_key},
@@ -50,19 +61,33 @@ class ChatCompletionsModel:
         await self.client.aclose()
 
     async def complete(self, task: str, role: str, payload: dict) -> ModelReply:
-        import httpx
+        return await self._dialog(task, role, payload)
 
-        selected = self.role_models.get(role, self.model)
+    async def complete_with_tools(self, task: str, role: str, payload: dict, session) -> ModelReply:
+        return await self._dialog(task, role, payload, session=session)
+
+    async def extract(self, payload: dict, images: list[dict]) -> ModelReply:
+        return await self._dialog("extract", "D", payload, images=images)
+
+    def _user(self, text: str, images=None):
+        if self.api_style == "responses":
+            parts = [{"type": "input_text", "text": text}]
+            for image in images or []:
+                parts += [{"type": "input_text", "text": "Source image ID: " + image["source_id"]},
+                          {"type": "input_image", "image_url": image["data_url"], "detail": "high"}]
+        else:
+            if not images:
+                return {"role": "user", "content": text}
+            parts = [{"type": "text", "text": text}]
+            for image in images:
+                parts += [{"type": "text", "text": "Source image ID: " + image["source_id"]},
+                          {"type": "image_url", "image_url": {"url": image["data_url"], "detail": "high"}}]
+        return {"role": "user", "content": parts}
+
+    async def _post(self, endpoint: str, body: dict) -> dict:
+        import httpx
         try:
-            response = await self.client.post("chat/completions", json={
-                "model": selected,
-                "messages": [
-                    {"role": "system", "content": system_prompt(task, role)},
-                    {"role": "user", "content": json.dumps(payload, ensure_ascii=False, allow_nan=False)},
-                ],
-                "response_format": {"type": "json_object"},
-                "max_completion_tokens": self.max_tokens,
-            })
+            response = await self.client.post(endpoint, json=body)
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             # Do not print remote error bodies, headers, or secrets.
@@ -70,16 +95,85 @@ class ChatCompletionsModel:
         except httpx.RequestError:
             raise ProviderError("model endpoint network/timeout error") from None
         try:
-            body = response.json()
-            choice = body["choices"][0]
-            message = choice["message"]
-            if choice.get("finish_reason") != "stop" or message.get("refusal"):
-                raise ProviderError("model output refused, truncated, or not complete")
-            parsed = json.loads(message["content"])
-            if not isinstance(parsed, dict):
-                raise ContractError("model output must be a JSON object")
-            usage = body.get("usage") or {}
-            usage = {k: v for k, v in usage.items() if k in {"prompt_tokens", "completion_tokens", "total_tokens"} and type(v) is int and v >= 0}
-            return ModelReply(parsed, body.get("model", selected), usage)
-        except (KeyError, IndexError, TypeError, ValueError, AttributeError):
-            raise ProviderError("model endpoint returned an invalid response/JSON") from None
+            return response.json()
+        except ValueError:
+            raise ProviderError("model endpoint returned invalid JSON") from None
+
+    async def _dialog(self, task, role, payload, session=None, images=None):
+        selected = self.role_models.get(role, self.model)
+        prompt = system_prompt(task, role)
+        state = [self._user(json.dumps(payload, ensure_ascii=False, allow_nan=False), images)]
+        if self.api_style == "chat_completions":
+            state.insert(0, {"role": "system", "content": prompt})
+        usage, seen_ids = {}, set()
+        for turn in range(self.max_tool_rounds + 1):
+            definitions = session.definitions if session else []
+            if self.api_style == "responses":
+                request = {"model": selected, "instructions": prompt, "input": state, "store": False,
+                           "text": {"format": {"type": "json_object"}}, "max_output_tokens": self.max_tokens,
+                           "include": ["reasoning.encrypted_content"]}
+                if definitions:
+                    request["tools"] = [{"type": "function", **d["function"], "strict": False} for d in definitions]
+                endpoint = "responses"
+            else:
+                request = {"model": selected, "messages": state, "response_format": {"type": "json_object"},
+                           "max_completion_tokens": self.max_tokens}
+                if definitions:
+                    request["tools"] = definitions
+                endpoint = "chat/completions"
+            if definitions:
+                request["tool_choice"] = "auto"
+            body = await self._post(endpoint, request)
+            try:
+                for key, value in (body.get("usage") or {}).items():
+                    key = {"input_tokens": "prompt_tokens", "output_tokens": "completion_tokens"}.get(key, key)
+                    if key in {"prompt_tokens", "completion_tokens", "total_tokens"} and type(value) is int and value >= 0:
+                        usage[key] = usage.get(key, 0) + value
+                if self.api_style == "responses":
+                    if body.get("status") != "completed":
+                        raise ProviderError("model response refused, truncated, or incomplete")
+                    output = body["output"]
+                    calls = [{"id": o["call_id"], "function": {"name": o["name"], "arguments": o["arguments"]}}
+                             for o in output if o.get("type") == "function_call"]
+                    parts = [p for o in output if o.get("type") == "message" for p in o.get("content", [])]
+                    if any(p.get("type") == "refusal" for p in parts):
+                        raise ProviderError("model refused")
+                    content = "".join(p.get("text", "") for p in parts if p.get("type") == "output_text")
+                    state.extend(output)  # Preserve reasoning items between tool turns.
+                else:
+                    choice = body["choices"][0]
+                    message = choice["message"]
+                    if message.get("refusal") or choice.get("finish_reason") not in {"stop", "tool_calls"}:
+                        raise ProviderError("model output refused, truncated, or not complete")
+                    calls = message.get("tool_calls") or []
+                    if bool(calls) != (choice.get("finish_reason") == "tool_calls"):
+                        raise ProviderError("inconsistent tool-call response")
+                    content = message.get("content")
+                    if calls:
+                        # Preserve provider reasoning fields, if returned, for compatible reasoning endpoints.
+                        state.append({"role": "assistant", **{k: v for k, v in message.items() if k in {"content", "tool_calls", "reasoning_content"}}})
+                if not calls:
+                    parsed = parse_json(content)
+                    if not isinstance(parsed, dict):
+                        raise ProviderError("model output must be a JSON object")
+                    return ModelReply(parsed, body.get("model", selected), usage, turn + 1)
+                if not session or turn >= self.max_tool_rounds or len(calls) > 8:
+                    raise ProviderError("tool call limit reached or tools unavailable")
+                for call in calls:
+                    call_id, function = call["id"], call["function"]
+                    if not isinstance(call_id, str) or not call_id or call_id in seen_ids:
+                        raise ProviderError("invalid or duplicate tool call ID")
+                    seen_ids.add(call_id)
+                    args = parse_json(function["arguments"])
+                    result = session.execute(function["name"], args, call_id)
+                    encoded = json.dumps(result, ensure_ascii=False, allow_nan=False)
+                    if self.api_style == "responses":
+                        state.append({"type": "function_call_output", "call_id": call_id, "output": encoded})
+                    else:
+                        state.append({"role": "tool", "tool_call_id": call_id, "content": encoded})
+                    attached = session.images(result)
+                    if attached:
+                        state.append(self._user("Requested original sources in order: " + ", ".join(i["source_id"] for i in attached), attached))
+            except (KeyError, IndexError, TypeError, ValueError, AttributeError):
+                raise ProviderError("model endpoint returned an invalid response/JSON") from None
+        raise ProviderError("tool call limit reached")

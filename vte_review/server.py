@@ -35,11 +35,16 @@ from .prompts import PROMPT_VERSION
 from .retrieval import EvidenceIndex
 from .knowledge import KnowledgeStore, SQLiteEvidenceIndex, MAX_TEXT
 from .workflow import Settings, Workflow
+from .patient_memory import PatientMemory
+from .intake import SourceStore
+from .workspace import WorkspaceServices, configured_model, validate_labels
+from .providers import ProviderError
+from .example_case import CLINICAL_EXAMPLE
 
 WEB = Path(__file__).with_name("web")
 RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$")
 STATIC = re.compile(r"^[A-Za-z0-9_-]+\.(?:html|css|js|svg|png|ico)$")
-MAX_BODY = 8 * 1024 * 1024
+MAX_BODY = 9 * 1024 * 1024
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 DECISIONS = {"accept", "accept_with_changes", "reject"}
 SCENARIOS = {
@@ -104,13 +109,15 @@ class Job:
             self.cond.notify_all()
 
 
-class App:
+class App(WorkspaceServices):
     def __init__(self, runs_dir: Path):
         self.runs = Path(runs_dir).resolve()
         self.runs.mkdir(parents=True, exist_ok=True)
         self.jobs: dict[str, Job] = {}
         self.lock = threading.Lock()
         self.knowledge = KnowledgeStore(self.runs / "knowledge.sqlite3")
+        self.memory = PatientMemory(self.runs / "patients.sqlite3")
+        self.sources = SourceStore(self.runs / "sources")
 
     # ---------- queries ----------
     def info(self) -> dict:
@@ -122,10 +129,12 @@ class App:
         return {
             "version": __version__, "prompt_version": PROMPT_VERSION, "runs_dir": str(self.runs),
             "knowledge": self.knowledge.stats(),
+            "capabilities": ["patient_memory", "source_images", "docx_intake", "tool_calling", "clinical_checks", "research_labels"],
             "roles": ROLE_NAMES, "httpx": has_httpx, "defaults": asdict(Settings()), "scenarios": SCENARIOS,
             "env": {
                 "base_url": os.environ.get("VTE_BASE_URL", ""),
                 "model": os.environ.get("VTE_MODEL", ""),
+                "api_style": os.environ.get("VTE_API_STYLE", "chat_completions"),
                 "api_key_set": bool(os.environ.get("VTE_API_KEY")),
                 "role_models": {r: os.environ.get(f"VTE_MODEL_{r}", "") for r in (*ROLES, "D")},
             },
@@ -202,6 +211,8 @@ class App:
         return {**summary, "case": read_json(path / "case.json"), "meta": read_json(path / "meta.json", {}),
                 "result": result, "events": events,
                 "signoffs": read_json(path / "physician_reviews.json", []) or [],
+                "research_labels": read_json(path / "research_labels.json", []) or [],
+                "memory_updates": read_json(path / "memory_updates.json", []) or [],
                 "has_report": (path / "report.md").exists()}
 
     def validate(self, body: dict) -> dict:
@@ -223,6 +234,7 @@ class App:
 
     # ---------- commands ----------
     def start(self, body: dict) -> str:
+        labels = validate_labels(body.get("research_labels", []))
         mode = body.get("mode", "demo")
         raw = body.get("settings") or {}
         if not isinstance(raw, dict):
@@ -277,22 +289,28 @@ class App:
                                 if r in (*ROLES, "D") and isinstance(v, str) and v.strip()})
             try:
                 from .providers import ChatCompletionsModel
-                model = ChatCompletionsModel(base, key, name, role_models=role_models, timeout=settings.call_timeout)
+                api_style = llm.get("api_style") or os.environ.get("VTE_API_STYLE", "chat_completions")
+                model = ChatCompletionsModel(base, key, name, role_models=role_models, timeout=settings.call_timeout, api_style=api_style)
             except ModuleNotFoundError:
                 raise ValueError('Missing HTTP adapter. Run: python -m pip install -e ".[llm]"') from None
-            meta.update(base_url=base, model=name, role_models=role_models)  # never the key
+            meta.update(base_url=base, model=name, role_models=role_models, api_style=api_style)  # never the key
         else:
             raise ValueError("Unknown mode")
 
         if frozen is not None:
             index = SQLiteEvidenceIndex(frozen)
 
+        memory_snapshot = self.memory_for(case)
+        if case.get("source_ids"):
+            self.sources.bundle(case["source_ids"])
         run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid4().hex[:8]
         out = self.runs / run_id
         out.mkdir(parents=True, exist_ok=False)
         write_json(out / "case.json", case)
         write_json(out / "meta.json", meta)
         write_json(out / "evidence.json", list(index.documents.values()))
+        write_json(out / "memory_snapshot.json", memory_snapshot)
+        write_json(out / "research_labels.json", labels)
         job = Job(run_id)
         with self.lock:
             self.jobs[run_id] = job
@@ -308,7 +326,18 @@ class App:
                         stream.write(json.dumps(event, ensure_ascii=False) + "\n")
                         stream.flush()
                         job.push(event)
-                    result = await Workflow(model, index, settings, on_event).run(case)
+                    result = await Workflow(model, index, settings, on_event,
+                                            memory_snapshot=read_json(out / "memory_snapshot.json", {"entries": []}), sources=self.sources).run(case)
+                updates = []
+                if case.get("patient"):
+                    p = case["patient"]
+                    for proposal in result.get("memory_proposals", []):
+                        updates.append(self.memory.add(p["patient_id"], {
+                            "kind": "model_suggestion", "topic": proposal["topic"], "content": proposal["content"],
+                            "occurred_at": p["decision_at"], "available_at": p["decision_at"],
+                            "source": "run:" + job.id + " / " + ", ".join(proposal["source_ids"]),
+                            "roles": proposal["roles"], "encounter_id": p["encounter_id"]}, actor="Agent D", model=True))
+                write_json(out / "memory_updates.json", updates)
                 write_json(out / "result.json", result)
                 (out / "report.md").write_text(report(result), encoding="utf-8")
             finally:
@@ -455,6 +484,21 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"runs": self.app.list_runs()})
             if url.path == "/api/demo":
                 return self.send_json({"case": DEMO_CASE, "evidence": DEMO_EVIDENCE, "scenarios": SCENARIOS})
+            if url.path == "/api/demo/clinical":
+                return self.send_json({"case": CLINICAL_EXAMPLE})
+            if url.path == "/api/patients":
+                return self.send_json({"patients": self.app.memory.patients()})
+            patient_match = re.fullmatch(r"/api/patients/([A-Za-z0-9][A-Za-z0-9._-]{0,79})", url.path)
+            if patient_match:
+                return self.send_json({"patient_id": patient_match.group(1), "entries": self.app.memory.history(patient_match.group(1))})
+            source_match = re.fullmatch(r"/api/sources/(SRC-[a-f0-9]{32})(/image)?", url.path)
+            if source_match:
+                source = self.app.sources.get(source_match.group(1))
+                if source_match.group(2):
+                    if not source["mime"].startswith("image/"):
+                        raise ValueError("Not an image")
+                    return self.send_bytes((self.app.sources.root / source["id"] / "source.bin").read_bytes(), source["mime"])
+                return self.send_json(source)
             if url.path == "/api/knowledge":
                 query = parse_qs(url.query)
                 return self.send_json({"documents": self.app.knowledge.list_documents(query.get("archived") == ["1"]), "stats": self.app.knowledge.stats()})
@@ -511,6 +555,24 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"id": self.app.start(body)}, 201)
             if path == "/api/validate":
                 return self.send_json(self.app.validate(body))
+            if path == "/api/clinical/check":
+                return self.send_json(self.app.check_case(body))
+            if path == "/api/sources":
+                return self.send_json(self.app.sources.ingest(body.get("filename"), body.get("content_base64")), 201)
+            if path == "/api/intake/extract":
+                return self.send_json(self.app.extract_sources(body))
+            patient_match = re.fullmatch(r"/api/patients/([A-Za-z0-9][A-Za-z0-9._-]{0,79})/(entries|snapshot|resolve)", path)
+            if patient_match:
+                patient_id, action = patient_match.groups()
+                if action == "entries":
+                    return self.send_json(self.app.memory.add(patient_id, body.get("entry"), actor=body.get("actor")), 201)
+                if action == "resolve":
+                    return self.send_json(self.app.memory.resolve(patient_id, body.get("entry_id"), body))
+                return self.send_json(self.app.memory.snapshot(patient_id, body.get("as_of"),
+                                      task_type=body.get("task_type", "generate_plan"), encounter_id=body.get("encounter_id", "")))
+            label_match = re.fullmatch(r"/api/runs/([^/]+)/labels", path)
+            if label_match:
+                return self.send_json(self.app.add_labels(label_match.group(1), body), 201)
             if path == "/api/knowledge":
                 return self.send_json(self.app.knowledge.add_many(body.get("documents", [body])), 201)
             if path == "/api/knowledge/extract":
@@ -528,6 +590,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"error": "Record not found"}, 404)
         except (ValueError, TypeError) as exc:  # includes ContractError / JSONDecodeError
             self.send_json({"error": str(exc) or type(exc).__name__}, 400)
+        except (ProviderError, asyncio.TimeoutError) as exc:
+            self.send_json({"error": str(exc) if isinstance(exc, ProviderError) else "Model extraction timed out"}, 502)
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
             pass
 

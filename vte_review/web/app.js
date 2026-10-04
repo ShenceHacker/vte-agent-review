@@ -91,6 +91,8 @@
       missing_information: "Additional patient data or evidence is required",
       revision_limit: "Revision limit reached with unresolved issues",
       no_change_after_revision: "No changes were made; the review loop stopped",
+      source_verification_required: "Confirm source readings, dates and conflicting records before review",
+      clinical_data_requires_review: "Draft available; dependent decisions need additional clinical data",
     };
     if (map[r]) return map[r];
     if (r.startsWith("no_retrieved_evidence:")) return `No matching evidence for: ${r.split(":")[1]}`;
@@ -197,6 +199,7 @@
   function openDrawer(html) {
     if (!$("#drawer").classList.contains("on")) drawerFocus = document.activeElement;
     const drawer = $("#drawer"); drawer.innerHTML = html; drawer.inert = false;
+    $$(".field", drawer).forEach((field,n)=>{const label=$("label",field),input=$("input,textarea,select",field);if(label&&input){input.id ||= `drawer-field-${n}`;label.htmlFor=input.id;}});
     drawer.classList.add("on"); $("#drawer-mask").classList.add("on"); drawer.setAttribute("aria-hidden", "false");
     $(".app").inert = true;
     $("button", drawer)?.focus();
@@ -287,7 +290,8 @@
   function caseFromJSON(o) {
     if (!o || typeof o !== "object" || Array.isArray(o) || typeof o.case_id !== "string" || typeof o.question !== "string" || !o.facts || typeof o.facts !== "object" || Array.isArray(o.facts) || !Array.isArray(o.missing_information) || o.missing_information.some((v) => typeof v !== "string")) throw new Error("Expected case_id, question, a facts object and a missing_information string array");
     const facts = Object.entries(o.facts || {}).map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)]);
-    return { case_id: String(o.case_id || ""), question: String(o.question || ""), facts: facts.length ? facts : [["", ""]], missing: [...new Set((o.missing_information || []).map(String))] };
+    const extra = Object.fromEntries(["patient","task_type","candidate_plan","observations","source_ids","source_context"].filter(k=>k in o).map(k=>[k,o[k]]));
+    return { case_id: String(o.case_id || ""), question: String(o.question || ""), facts: facts.length ? facts : [["", ""]], missing: [...new Set((o.missing_information || []).map(String))], extra };
   }
   function parseVal(v) {
     const t = String(v).trim();
@@ -299,7 +303,7 @@
   function buildCase() {
     const c = S.w.case, facts = {};
     for (const [k, v] of c.facts) if (String(k).trim() && String(v).trim()) facts[String(k).trim()] = parseVal(v);
-    return { case_id: c.case_id.trim(), question: c.question.trim(), facts, missing_information: c.missing.filter((x) => x.trim()) };
+    return { ...(c.extra || {}), case_id: c.case_id.trim(), question: c.question.trim(), facts, missing_information: c.missing.filter((x) => x.trim()) };
   }
   function caseChecks() {
     const c = buildCase(), out = [];
@@ -307,7 +311,8 @@
     out.push(c.case_id ? ["ok", `Case ID: ${c.case_id}`] : ["bad", "Enter a de-identified case ID"]);
     out.push(c.question ? ["ok", "Decision question provided"] : ["bad", "Enter a decision question"]);
     const n = Object.keys(c.facts).length;
-    out.push(n ? ["ok", `Facts entered: ${n}`] : ["bad", "Enter at least one verified patient fact"]);
+    const sourced = (c.observations||[]).filter(o=>o.status==='confirmed').length;
+    out.push(n || sourced ? ["ok", `Facts entered: ${n} · Confirmed source readings: ${sourced}`] : ["bad", "Enter a verified patient fact or confirm a sourced observation"]);
     const keys = S.w.case.facts.map(([k]) => String(k).trim()).filter(Boolean);
     if (new Set(keys).size !== keys.length) out.push(["bad", "Merge duplicate fields before starting"]);
     out.push(c.missing_information.length ? ["warn", `Missing fields: ${c.missing_information.length} (included in the review)`] : ["info", "No missing information listed"]);
@@ -316,7 +321,8 @@
   const checkList = (items) => `<div class="check-list">${items.map(([s, t]) => `<div class="check-item ${s}">${icon(s === "ok" ? "check" : s === "bad" ? "x" : s === "warn" ? "alert" : "info")}<span>${esc(t)}</span></div>`).join("")}</div>`;
   function defaultsToSettings() { const d = S.info?.defaults || { max_revisions: 3, max_concurrency: 3, call_timeout: 60, top_k: 4 }; return { max_revisions: d.max_revisions, concurrency: d.max_concurrency, timeout: d.call_timeout, top_k: d.top_k }; }
 
-  function viewNew() { S.w = S.w || loadWizard(); if (!S.w.settings) S.w.settings = defaultsToSettings(); S.evMap = Object.fromEntries((S.w.evidence || []).map((d) => [d.id, d])); renderWizard(); }
+  async function viewNew() { S.w = S.w || loadWizard(); if (!S.w.settings) S.w.settings = defaultsToSettings(); S.evMap = Object.fromEntries((S.w.evidence || []).map((d) => [d.id, d])); await hydrateCaseSources(); if(location.hash.startsWith("#/new"))renderWizard(); }
+  async function hydrateCaseSources(){const c=S.w.case;const ids=c.extra?.source_ids||[];const records=await Promise.all(ids.map(async id=>{try{return await api(`/api/sources/${encodeURIComponent(id)}`);}catch{return {id,name:id+" (source unavailable)",mime:"text/plain",images:[]};}}));if(c===S.w.case)S.w.sources=records;}
   function renderWizard() {
     const w = S.w;
     const steps = [["Case details", "De-identified patient facts"], ["Evidence", "Select sources"], ["Run setup", "Demo or model"]];
@@ -335,6 +341,7 @@
       <div class="notice warn">${icon("lock")}<div>Use a <b>de-identified</b> case. Omit names and personal identifiers.</div></div>
       <div class="field" style="margin-top:16px"><label>Case ID</label><input class="input" data-input="case" data-k="case_id" value="${esc(c.case_id)}" placeholder="e.g. DEID-2026-001"></div>
       <div class="field" style="margin-top:14px"><label>Decision question</label><textarea class="textarea" data-input="case" data-k="question" placeholder="State the treatment decision and relevant clinical context">${esc(c.question)}</textarea><span class="hint">Specify the decision and treatment stage.</span></div>
+      ${patientContextHTML()}
       <div class="field" style="margin-top:14px"><label>Verified patient facts</label>
         <div id="facts">${c.facts.map(factRow).join("")}</div>
         <div class="row wrap" style="margin-top:8px"><button class="btn sm" data-action="fact-add">${icon("plus")}Add field</button><span class="muted small">Quick add:</span>${QUICK.map((q) => `<button class="chip" data-action="fact-quick" data-k="${esc(q)}">${esc(q)}</button>`).join("")}</div>
@@ -347,14 +354,14 @@
         <div class="row"><div class="seg"><button data-action="case-mode" data-m="form" class="${w.caseMode === "form" ? "on" : ""}">${icon("pen")}Form</button><button data-action="case-mode" data-m="json" class="${w.caseMode === "json" ? "on" : ""}">${icon("code")}JSON</button></div></div></div>
         <div class="card-b">${w.caseMode === "form" ? form : json}</div>
         <div class="card-h" style="border-top:1px solid var(--line-2);border-bottom:0">
-          <div class="row"><button class="btn sm" data-action="case-demo">${icon("flask")}Load demo case</button>
+          <div class="row wrap"><button class="btn sm" data-action="case-demo">${icon("flask")}Workflow demo</button><button class="btn sm" data-action="case-clinical">${icon("file")}Clinical example</button>
           <label class="btn sm" tabindex="0" role="button">${icon("upload")}Import JSON<input type="file" accept=".json,application/json" data-change="case-file" hidden></label></div>
           <button class="btn ghost sm danger" data-action="case-clear">${icon("trash")}Clear</button></div>
       </div>
       <div class="stack">
         <div class="card"><div class="card-h"><h3>${icon("shield")}Validation</h3></div><div class="card-b" id="case-check"></div></div>
         <details class="card preview-details"><summary>View structured case</summary><pre class="json" id="case-preview"></pre></details>
-      </div></div>`;
+      </div></div>${intakeHTML()}`;
   }
   function refreshCaseSide() {
     const el = $("#case-check"); if (el) el.innerHTML = checkList(caseChecks());
@@ -425,7 +432,7 @@
         <div class="grid g-2"><div class="field"><label>Demo delay per call: <span id="pace-v">${Number(w.pace).toFixed(1)}</span> s</label><input type="range" min="0" max="2" step="0.1" value="${w.pace}" data-input="pace"></div>
         <label class="row" style="gap:8px;cursor:pointer"><input type="checkbox" data-change="use-demo" ${w.useDemoData ? "checked" : ""}> Use the built-in synthetic case and evidence</label></div>
       </div></div>`;
-    const llm = `<div class="card"><div class="card-h"><h3>${icon("cpu")}Model endpoint</h3><span class="muted small">Chat Completions compatible · JSON mode</span></div><div class="card-b stack" style="gap:14px">
+    const llm = `<div class="card"><div class="card-h"><h3>${icon("cpu")}Model endpoint</h3><span class="muted small">Structured output & tools</span></div><div class="card-b stack" style="gap:14px">${apiStyleHTML()}
         <div class="grid g-2"><div class="field"><label>Base URL</label><input class="input" data-input="llm" data-k="base_url" value="${esc(w.llm.base_url)}" placeholder="${esc(env.base_url || "https://api.openai.com/v1")}"></div>
         <div class="field"><label>Model name</label><input class="input" data-input="llm" data-k="model" value="${esc(w.llm.model)}" placeholder="${esc(env.model || "Model identifier")}"></div></div>
         <div class="field"><label>API Key</label><input class="input" type="password" autocomplete="off" data-input="apikey" value="${esc(apiKey)}" placeholder="${env.api_key_set ? "Server key is configured; leave blank to use it" : "sk-…"}"><span class="hint">${icon("lock")} Kept in this page session only.</span></div>
@@ -544,6 +551,9 @@
     const R = (r) => `<b>${r === "D" ? "Coordinator D" : `Agent ${r}`}</b>`;
     switch (e.event) {
       case "started": return ["var(--brand)", "Run started", `Max revisions ${e.settings?.max_revisions} · Concurrency ${e.settings?.max_concurrency} · Prompt ${e.prompt_version}`];
+      case "clinical_checked": return ["var(--brand)", "Clinical data checked", `${e.report?.issues?.length || 0} findings · ${e.report?.calculations?.length || 0} calculations`];
+      case "tool_started": return [`var(--${e.role})`, `${R(e.role)} requested a tool`, e.tool];
+      case "tool_completed": return [`var(--${e.role})`, `${R(e.role)} received tool results`, `${e.tool} · ${e.result?.status || "complete"}`];
       case "call_completed":
         if (e.task === "assess") return [`var(--${e.role})`, `${R(e.role)} completed assessment`, e.output?.summary];
         if (e.task === "synthesize") return ["var(--D)", `${R("D")} created a draft`, ""];
@@ -609,7 +619,7 @@
     const draft = r.draft, c = d.case || {};
     const m = r.metrics || {};
     const pendingRoles = ROLES.filter((x) => r.approvals?.[x] == null);
-    const facts = Object.entries(c.facts || {});
+    const facts = Object.entries(r.clinical_checks?.normalized_facts || c.facts || {});
     const sections = draft ? ROLES.map((x) => {
       const s = draft.sections[x], ap = r.approvals?.[x], rev = r.reviews?.[x];
       return `<div class="section-card ${x}"><div class="sh">${roleTag(x, 32)}<div style="flex:1"><div class="name">Agent ${x} · ${ROLE[x].name}</div><div class="sub">${ROLE[x].short} section</div></div>${ap != null ? badge(`v${ap} Approved`, "ok") : badge(VERDICT[rev?.verdict]?.t || "Not approved", rev?.verdict === "needs_information" ? "bad" : "warn")}</div>
@@ -623,6 +633,7 @@
       <div class="verdict ${v[0]}"><div class="big-ic">${icon(v[1])}</div><div><h3>${v[2]}</h3><p>${esc(reasonText(r.reason))}.${v[3]}</p></div>
         <div class="verdict-kpis"><div><b>v${r.version}</b><span>Draft version</span></div><div><b>${r.revisions}</b><span>D revisions</span></div><div><b>${m.calls ?? "—"}</b><span>Model calls</span></div><div><b>${fmtSec(m.elapsed_s)}</b><span>Elapsed time</span></div></div></div>
       ${r.mode === "synthetic_demo" ? `<div class="notice warn">${icon("flask")}<div><b>Synthetic demo</b> · Workflow illustration only.</div></div>` : ""}
+      ${(r.clinical_checks?.issues||[]).some(i=>i.severity==='blocking')?`<div class="card"><div class="card-h"><h3>${icon("alert")}Clinical information to resolve</h3></div><div class="card-b">${checkList(r.clinical_checks.issues.filter(i=>i.severity==='blocking').map(i=>['warn',i.roles.join('/')+': '+i.message]))}</div></div>`:""}
       <div class="card"><div class="card-h"><h3>${icon("user")}Case summary</h3><span class="chip mono">${esc(c.case_id)}</span></div><div class="card-b">
         <div style="font-weight:600;margin-bottom:10px">${esc(c.question)}</div>
         <dl class="facts">${facts.map(([k, val]) => `<dt>${esc(k)}</dt><dd>${esc(fmtVal(val))}</dd>`).join("")}</dl>
@@ -693,7 +704,7 @@
     const stat = (v, l, ic, c) => `<div class="card stat"><div class="stat-ic" style="background:var(--${c}-soft);color:var(--${c})">${icon(ic)}</div><div><div class="stat-v" style="font-size:20px">${v}</div><div class="stat-l">${l}</div></div></div>`;
     const label = (e) => `${e.event}${e.task ? ` · ${e.task}` : ""}${e.role ? ` · ${e.role}` : ""}${e.version ? ` · v${e.version}` : ""}`;
     const tone = (e) => (e.event === "call_failed" ? "bad" : e.event === "finished" ? (e.status === "approved" ? "ok" : "warn") : e.event.startsWith("draft") ? "run" : "gray");
-    return `<div class="stack">
+    return `<div class="stack">${workspaceAuditHTML(d)}
       <div class="grid g-4">${stat(fmtSec(m.elapsed_s), "Elapsed time", "clock", "brand")}${stat(`${m.calls ?? "—"} <span class="muted small">/ Review ${m.review_calls ?? "—"}</span>`, "Model calls", "cpu", "ok")}${stat(m.usage_reported_calls ? m.reported_total_tokens : "Not reported", "Reported tokens", "zap", "warn")}${stat(d.events.length, "Events", "activity", "run")}</div>
       <div class="grid g-2">
         <div class="card"><div class="card-h"><h3>${icon("settings")}Run configuration</h3></div><div class="card-b"><pre class="json">${jsonHTML({ mode: r?.mode || d.mode, prompt_version: r?.prompt_version, settings: r?.settings, meta: d.meta })}</pre></div></div>
@@ -712,7 +723,7 @@
     const i = S.info || {}, env = i.env || {}, w = S.w;
     const row = (k, v) => `<dt>${esc(k)}</dt><dd>${v}</dd>`;
     setView(`<div class="page-h"><div><h1 class="h1">Settings</h1><p class="lead">Configure model access and role assignments.</p></div>${badge(env.api_key_set || apiKey ? "Credentials available" : "Demo ready", env.api_key_set || apiKey ? "ok" : "gray")}</div>
-      <div class="grid g-side"><div class="stack"><section class="card"><div class="card-h"><h3>${icon("cpu")}Model connection</h3><span class="muted small">Chat Completions · JSON mode</span></div><div class="card-b stack"><div class="profile-fields">
+      <div class="grid g-side"><div class="stack"><section class="card"><div class="card-h"><h3>${icon("cpu")}Model connection</h3><span class="muted small">Structured output & tools</span></div><div class="card-b stack">${apiStyleHTML()}<div class="profile-fields">
       <div class="field"><label>Base URL</label><input class="input" data-input="llm" data-k="base_url" value="${esc(w.llm.base_url)}" placeholder="${esc(env.base_url || "https://api.openai.com/v1")}"></div>
       <div class="field"><label>Default model</label><input class="input" data-input="llm" data-k="model" value="${esc(w.llm.model)}" placeholder="${esc(env.model || "Model identifier from your provider")}"></div>
       <div class="field wide"><label>API Key</label><input class="input" type="password" autocomplete="off" data-input="apikey" value="${esc(apiKey)}" placeholder="${env.api_key_set ? "Server credentials are available" : "Model service API key"}"><span class="hint">API key stays in memory. Endpoint and model names are saved locally.</span></div></div>
@@ -743,7 +754,7 @@
     "hist-f": (el) => { S.hist.f = el.dataset.f; $$("[data-action=hist-f]").forEach((b) => b.classList.toggle("on", b === el)); $("#hist-body").innerHTML = runRows(filterRuns()); },
     tab: (el) => { S.runTab = el.dataset.t; history.replaceState(null, "", `#/run/${encodeURIComponent(S.run.id)}?tab=${S.runTab}`); $$(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.t === S.runTab)); renderRunBody(); $("#view").scrollTop = 0; },
     print: () => { if (S.runTab !== "report") { S.runTab = "report"; renderRunShell(); } setTimeout(() => window.print(), 200); },
-    "reuse-case": () => { S.w = S.w || loadWizard(); S.w.case = caseFromJSON(S.run.case || {}); delete S.w.jsonDraft; S.w.jsonError = false; S.w.step = 0; S.w.caseMode = "form"; S.w.useDemoData = false; saveWizard(); location.hash = "#/new"; toast("Case loaded for a new review", "ok"); },
+    "reuse-case": () => { S.w = S.w || loadWizard(); S.w.case = caseFromJSON(S.run.case || {}); S.w.sources=[];S.w.labels=[];S.w.extractionIssues=[];delete S.w.jsonDraft; S.w.jsonError = false; S.w.step = 0; S.w.caseMode = "form"; S.w.useDemoData = false; saveWizard(); location.hash = "#/new"; toast("Case loaded for a new review", "ok"); },
     decision: (el) => { S.signDecision = el.dataset.d; $$("#decisions .decision").forEach((b) => b.classList.toggle("on", b === el)); },
     sign: async (el) => {
       const reviewer = $("#sign-name").value.trim(), comment = $("#sign-comment").value.trim();
@@ -773,8 +784,8 @@
       saveWizard(); renderWizard(); $(`[data-input=fact-v][data-i="${i}"]`)?.focus();
     },
     "miss-del": (el) => { S.w.case.missing.splice(+el.dataset.i, 1); saveWizard(); renderWizard(); },
-    "case-demo": async () => { try { const d = await api("/api/demo"); S.w.case = caseFromJSON(d.case); delete S.w.jsonDraft; S.w.jsonError = false; saveWizard(); renderWizard(); toast("Synthetic case loaded", "ok"); } catch (e) { toast(e.message, "bad"); } },
-    "case-clear": () => { S.w.case = blankCase(); delete S.w.jsonDraft; S.w.jsonError = false; saveWizard(); renderWizard(); },
+    "case-demo": async () => { try { const d = await api("/api/demo"); S.w.case = caseFromJSON(d.case); S.w.sources=[];S.w.labels=[];S.w.extractionIssues=[];delete S.w.jsonDraft; S.w.jsonError = false; saveWizard(); renderWizard(); toast("Synthetic case loaded", "ok"); } catch (e) { toast(e.message, "bad"); } },
+    "case-clear": () => { S.w.case = blankCase(); S.w.sources=[];S.w.labels=[];S.w.extractionIssues=[];delete S.w.jsonDraft; S.w.jsonError = false; saveWizard(); renderWizard(); },
     "ev-demo": async () => { try { const d = await api("/api/demo"); await setEvidence(d.evidence, "Synthetic demo evidence"); } catch (e) { toast(e.message, "bad"); } },
     "ev-clear": () => { S.w.knowledgeIds = null; S.w.evidence = null; S.w.evidenceName = ""; S.w.evidenceCheck = null; S.evMap = {}; saveWizard(); renderWizard(); },
     "w-mode": (el) => { S.w.mode = el.dataset.m; saveWizard(); renderWizard(); },
@@ -788,9 +799,10 @@
         if (!w.useDemoData) { body.case = buildCase(); if (w.evidence) body.evidence = w.evidence; }
       } else {
         body.case = buildCase(); body.evidence = w.evidence;
-        body.llm = { base_url: w.llm.base_url, model: w.llm.model, api_key: apiKey, role_models: w.llm.role_models };
+        body.llm = connection();
       }
       if (w.knowledgeIds?.length && (w.mode === "llm" || !w.useDemoData)) body.knowledge_ids = w.knowledgeIds;
+      if (w.mode === "llm" || !w.useDemoData) body.research_labels = w.labels || [];
       el.disabled = true; el.innerHTML = `<span class="spinner" style="border-color:rgba(255,255,255,.4);border-top-color:#fff"></span>Starting…`;
       try { const { id } = await api("/api/runs", { body }); location.hash = `#/run/${id}`; }
       catch (e) { toast(e.message, "bad"); renderWizard(); }
@@ -941,12 +953,91 @@
     "kb-select": (el) => { if(el.checked) K.selected.add(el.dataset.id); else K.selected.delete(el.dataset.id); $$("[data-change=kb-select]").forEach(input=>input.checked=K.selected.has(input.dataset.id)); $("#kb-selected-count").textContent=`${K.selected.size} selected`; $("#kb-use").disabled=!K.selected.size; },
     "case-file": async (el) => {
       const f = el.files[0]; if (!f) return;
-      try { const o = JSON.parse(await readFile(f)); S.w.case = caseFromJSON(o); delete S.w.jsonDraft; S.w.jsonError = false; S.w.useDemoData = false; saveWizard(); renderWizard(); toast("Case imported", "ok"); }
+      try { const o = JSON.parse(await readFile(f)); S.w.case = caseFromJSON(o); S.w.sources=[];S.w.labels=[];S.w.extractionIssues=[];await hydrateCaseSources();delete S.w.jsonDraft; S.w.jsonError = false; S.w.useDemoData = false; saveWizard(); renderWizard(); toast("Case imported", "ok"); }
       catch (e) { toast(`Unable to read case: ${e.message}`, "bad"); }
     },
     "evidence-file": (el) => importEvidenceFile(el.files[0]),
     "use-demo": (el) => { S.w.useDemoData = el.checked; saveWizard(); renderWizard(); },
   };
+
+  /* ================= longitudinal workspace ================= */
+  const connection = () => ({...S.w.llm, api_key:apiKey, api_style:S.w.llm.api_style || S.info?.env?.api_style || "chat_completions"});
+  const extraCase = () => (S.w.case.extra ||= {});
+  const utcNow = () => new Date().toISOString();
+  function apiStyleHTML(){const style=S.w.llm.api_style||S.info?.env?.api_style||"chat_completions";return `<div class="field"><label>API protocol</label><select class="select" data-change="api-style"><option value="chat_completions" ${style==='chat_completions'?'selected':''}>Chat Completions</option><option value="responses" ${style==='responses'?'selected':''}>Responses</option></select><span class="hint">Choose the protocol supported by your model endpoint, including tool calls and image inputs.</span></div>`;}
+  function workspaceAuditHTML(d){const r=d.result;return `<section class="card"><div class="card-h"><h3>${icon("shield")}Clinical context & tools</h3><span class="muted small">${r?.metrics?.tool_calls||0} tool calls · ${r?.metrics?.model_requests||0} completed model requests</span></div><div class="card-b"><details class="ev"><summary>Clinical checklist and calculations</summary><pre class="json">${jsonHTML(r?.clinical_checks||{})}</pre></details><details class="ev"><summary>Frozen patient memory</summary><pre class="json">${jsonHTML(r?.memory_snapshot||{})}</pre></details><details class="ev"><summary>Proposed memory updates</summary><pre class="json">${jsonHTML(d.memory_updates||r?.memory_proposals||[])}</pre></details></div></section><section class="card"><div class="card-h"><h3>${icon("lock")}Research labels · excluded from model inputs</h3><button class="btn sm" data-action="run-label-add">Add label</button></div><div class="card-b">${labelsHTML(d.research_labels||[])}</div></section>`;}
+  function patientContextHTML() {
+    const e=extraCase(), p=e.patient || {};
+    return `<div class="context-box"><div class="row"><b>${icon("users")}Decision context</b><a href="#/patients" class="btn ghost sm">Patient timeline${icon("chevron")}</a></div>
+      <div class="grid g-2"><div class="field"><label>Patient ID</label><input class="input" data-input="patient-context" data-k="patient_id" value="${esc(p.patient_id)}" placeholder="DEID-P001"></div><div class="field"><label>Encounter ID</label><input class="input" data-input="patient-context" data-k="encounter_id" value="${esc(p.encounter_id)}" placeholder="VISIT-001"></div></div>
+      <div class="field"><label>Decision time (ISO + timezone)</label><input class="input" data-input="patient-context" data-k="decision_at" value="${esc(p.decision_at)}" placeholder="2026-10-04T09:00:00+08:00"></div>
+      <div class="field"><label>Task</label><select class="select" data-change="task-type"><option value="generate_plan" ${e.task_type!=="review_plan"?"selected":""}>Generate an independent plan</option><option value="review_plan" ${e.task_type==="review_plan"?"selected":""}>Review an existing prescription</option></select></div>
+      ${e.task_type==="review_plan"?`<div class="field"><label>Plan to review (model input)</label><textarea class="textarea" data-input="candidate-plan">${esc(e.candidate_plan)}</textarea></div>`:""}
+      <button class="btn sm" data-action="case-memory">${icon("clock")}Preview memory at this time</button></div>`;
+  }
+  function intakeHTML() {
+    const e=extraCase(), rows=e.observations || [], sources=(S.w.sources || []).filter(s=>(e.source_ids||[]).includes(s.id));
+    const input=(i,k,v,placeholder="")=>`<input class="input" data-input="observation" data-i="${i}" data-k="${k}" value="${esc(v)}" placeholder="${placeholder}">`;
+    return `<section class="card" style="margin-top:20px"><div class="card-h"><h3>${icon("upload")}Source documents & images</h3><label class="btn sm" tabindex="0" role="button">${icon("plus")}Add files<input type="file" accept=".docx,.png,.jpg,.jpeg,.webp,.txt,.md" data-change="source-upload" multiple hidden></label></div>
+      <div class="card-b stack"><p class="muted small" style="margin:0">Word, report screenshots or text · 6 MB per file. Select records available at the decision time. Keep future outcomes and held-out physician plans in Research labels.</p>
+      ${sources.map(s=>`<div class="source-row"><div><b>${esc(s.name)}</b><div class="small muted">${esc(s.id)} · ${s.images?.length || (s.mime.startsWith("image/")?1:0)} images</div><div class="source-thumbs">${(s.mime.startsWith("image/")?[s.id]:(s.images||[])).map(id=>`<button class="source-thumb" data-action="source-open" data-id="${esc(id)}" title="View source"><img src="/api/sources/${encodeURIComponent(id)}/image" alt="Uploaded report"></button>`).join("")}</div></div>
+        <div class="stack"><input class="input" aria-label="Source available time" data-input="source-context" data-id="${esc(s.id)}" data-k="available_at" value="${esc(e.source_context?.[s.id]?.available_at)}" placeholder="Source available at (ISO + timezone)"><input class="input" aria-label="Source reviewer" data-input="source-context" data-id="${esc(s.id)}" data-k="reviewer" value="${esc(e.source_context?.[s.id]?.reviewer)}" placeholder="Verified by (whole source fits this decision time)"></div><button class="btn ghost sm" data-action="source-remove" data-id="${esc(s.id)}" title="Detach source">${icon("x")}</button></div>`).join("")}
+      <div class="row wrap"><button class="btn" data-action="source-extract" ${e.source_ids?.length?"":"disabled"}>${icon("sparkles")}Extract with model</button><button class="btn ghost" data-action="obs-add">${icon("plus")}Add sourced observation</button><a class="btn ghost" href="#/settings">Model settings</a></div><span class="hint">Extraction uses your configured model service. Confirm each reading and date before review. Raw CT interpretation is not supported.</span>
+      ${S.w.extractionIssues?.length?`<div class="notice warn">${icon("info")}<div>${S.w.extractionIssues.map(esc).join("<br>")}</div></div>`:""}
+      <div class="observation-list">${rows.map((o,i)=>`<div class="observation-card"><div class="row"><b>Observation ${i+1}</b><span class="spacer"></span><select class="select" data-change="observation-status" data-i="${i}">${["unverified","confirmed","excluded"].map(s=>`<option value="${s}" ${o.status===s?"selected":""}>${s}</option>`).join("")}</select><button class="btn ghost sm" data-action="obs-remove" data-i="${i}" title="Remove observation">${icon("x")}</button></div>
+        <div class="grid g-3"><div class="field"><label>Field</label>${input(i,"key",o.key,"serum_creatinine")}</div><div class="field"><label>Value</label>${input(i,"value",typeof o.value==="object"?JSON.stringify(o.value):o.value,"null if unreadable")}</div><div class="field"><label>Unit</label>${input(i,"unit",o.unit,"umol/L")}</div></div>
+        <div class="grid g-2"><div class="field"><label>Clinical date</label>${input(i,"observed_at",o.observed_at,"ISO + timezone")}</div><div class="field"><label>Known by</label>${input(i,"available_at",o.available_at,"ISO + timezone")}</div><div class="field"><label>Source ID</label>${input(i,"source_id",o.source_id,"SRC-…")}</div><div class="field"><label>Location in source</label>${input(i,"location",o.location,"Page / row / image region")}</div></div></div>`).join("")}</div>
+      <div class="row"><button class="btn primary" data-action="clinical-check">${icon("shield")}Check clinical data</button></div><div id="clinical-result"></div></div></section>
+      <section class="card" style="margin-top:20px"><div class="card-h"><h3>${icon("lock")}Research labels</h3><button class="btn sm" data-action="label-add">${icon("plus")}Add label</button></div><div class="card-b"><p class="small muted">Stored separately from model inputs: physician plan, expert audit or outcome.</p>${labelsHTML(S.w.labels || [],true)}</div></section>`;
+  }
+  function labelsHTML(labels,editable=false){return labels.length?labels.map((v,i)=>`<div class="memory-entry"><div class="row"><b>${esc(v.kind)}</b><span class="muted small">${esc(v.occurred_at)}</span>${editable?`<button class="btn ghost sm" data-action="label-remove" data-i="${i}">${icon("x")}</button>`:""}</div><p>${esc(v.content)}</p><div class="small muted">${esc(v.source)} · ${esc(v.recorded_by)}</div></div>`).join(""):'<span class="muted small">No labels added.</span>';}
+  function showLabelForm(runId="") {
+    openDrawer(`<div class="dh"><h3>Add research label</h3><button class="btn ghost sm" data-action="close-drawer">${icon("x")}</button></div><div class="db stack"><div class="field"><label>Type</label><select class="select" id="label-kind"><option value="physician_plan">Physician plan</option><option value="expert_audit">Expert audit</option><option value="outcome">Outcome</option></select></div><div class="field"><label>Content</label><textarea class="textarea" id="label-content"></textarea></div><div class="field"><label>Clinical date (ISO + timezone)</label><input class="input" id="label-date" value="${esc(extraCase().patient?.decision_at || "")}"></div><div class="field"><label>Source</label><input class="input" id="label-source"></div><div class="field"><label>Recorded by</label><input class="input" id="label-actor"></div><button class="btn primary" data-action="label-save" data-run="${esc(runId)}">Save separately</button></div>`);
+  }
+  async function viewPatients(selected="") {
+    const route=routeVersion, data=await api("/api/patients"); if(route!==routeVersion)return;
+    setView(`<div class="page-h"><div><h1 class="h1">Patient timeline</h1><p class="lead">Sourced history, treatment and preferences across encounters.</p></div></div><div class="grid g-side"><div class="stack"><div class="card"><div class="card-b row"><input class="input" id="patient-lookup" value="${esc(selected)}" placeholder="De-identified patient ID"><button class="btn primary" data-action="patient-load">Open</button></div></div><div id="patient-detail"></div></div><aside class="card"><div class="card-h"><h3>Patients</h3></div><div class="card-b stack">${data.patients.map(p=>`<button class="btn" data-action="patient-select" data-id="${esc(p.patient_id)}">${icon("user")}${esc(p.patient_id)}<span class="spacer"></span><span class="muted small">${p.entries} records</span></button>`).join("") || '<p class="muted small">Open a patient ID to add the first record.</p>'}</div></aside></div>`,crumb("Patients"));
+    if(selected)await loadPatient(selected);
+  }
+  async function loadPatient(id) {
+    const data=await api(`/api/patients/${encodeURIComponent(id)}`); S.patient=id;
+    const node=$("#patient-detail"); if(!node)return;
+    node.innerHTML=`<div class="card"><div class="card-h"><h3>${icon("user")}${esc(id)}</h3><button class="btn sm" data-action="memory-add">${icon("plus")}Add record</button></div><div class="card-b stack"><span class="small muted">Model suggestions require review and remain distinct from confirmed clinical facts. Corrections append a new record.</span>${data.entries.slice().reverse().map(v=>`<div class="memory-entry"><div class="row wrap">${badge(v.kind,"gray")}${badge(v.resolution?.action || v.status,v.status==="confirmed"?"ok":"warn")}<b>${esc(v.topic)}</b></div><p>${esc(v.content)}</p><div class="small muted">Clinical: ${esc(v.occurred_at)}<br>Available: ${esc(v.available_at)}<br>${esc(v.source)} · ${esc(v.actor)}${v.supersedes?'<br>Corrects '+esc(v.supersedes):''}</div>${v.status==="proposed"&&!v.resolution?`<div class="row" style="margin-top:10px"><button class="btn sm" data-action="memory-resolve" data-id="${esc(v.id)}" data-result="accept">Accept suggestion</button><button class="btn ghost sm" data-action="memory-resolve" data-id="${esc(v.id)}" data-result="reject">Reject</button></div>`:`<button class="btn ghost sm" data-action="memory-correct" data-id="${esc(v.id)}">Add correction / verified record</button>`}</div>`).join("") || '<div class="empty">No records yet</div>'}</div></div>`;
+  }
+  function memoryForm(supersedes="") {
+    openDrawer(`<div class="dh"><h3>Add patient record</h3><button class="btn ghost sm" data-action="close-drawer">${icon("x")}</button></div><div class="db stack"><div class="field"><label>Record type</label><select class="select" id="mem-kind"><option value="fact">Clinical fact / measurement</option><option value="preference">Preference / execution constraint</option><option value="clinician_decision">Physician decision</option><option value="actual_treatment">Treatment actually received</option></select></div><div class="field"><label>Topic</label><input class="input" id="mem-topic" placeholder="Medication / renal function / bleeding…"></div><div class="field"><label>Content</label><textarea class="textarea" id="mem-content"></textarea></div><div class="grid g-2"><div class="field"><label>Clinical date</label><input class="input" id="mem-occurred" placeholder="ISO + timezone"></div><div class="field"><label>Known by</label><input class="input" id="mem-available" placeholder="ISO + timezone"></div></div><div class="field"><label>Encounter ID</label><input class="input" id="mem-encounter"></div><div class="field"><label>Source</label><input class="input" id="mem-source"></div><div class="field"><label>Recorded / verified by</label><input class="input" id="mem-actor"></div><div class="field"><label>Corrects record (optional)</label><input class="input" id="mem-supersedes" value="${esc(supersedes)}"></div><span class="small muted">Use the actual historical dates. New entries preserve earlier records.</span><button class="btn primary" data-action="memory-save">Save confirmed record</button></div>`);
+  }
+  Object.assign(actions, {
+    "case-clinical":async()=>{try{const d=await api("/api/demo/clinical");S.w.case=caseFromJSON(d.case);S.w.sources=[];S.w.labels=[];S.w.extractionIssues=[];S.w.jsonError=false;delete S.w.jsonDraft;S.w.useDemoData=false;saveWizard();renderWizard();toast("Fictitious clinical example loaded","ok");}catch(e){toast(e.message,"bad");}},
+    "case-memory":async()=>{try{const p=extraCase().patient||{};const data=await api(`/api/patients/${encodeURIComponent(p.patient_id||"")}/snapshot`,{body:{as_of:p.decision_at,encounter_id:p.encounter_id,task_type:extraCase().task_type||"generate_plan"}});openDrawer(`<div class="dh"><h3>Memory at decision time</h3><button class="btn ghost sm" data-action="close-drawer">${icon("x")}</button></div><div class="db"><pre class="json">${jsonHTML(data)}</pre></div>`);}catch(e){toast(e.message,"bad");}},
+    "source-open":el=>openDrawer(`<div class="dh"><h3>Original source</h3><button class="btn ghost sm" data-action="close-drawer">${icon("x")}</button></div><div class="db"><p class="mono small">${esc(el.dataset.id)}</p><img class="source-full" src="/api/sources/${encodeURIComponent(el.dataset.id)}/image" alt="Original source image"></div>`),
+    "source-remove":el=>{const id=el.dataset.id,e=extraCase(),src=(S.w.sources||[]).find(s=>s.id===id);e.source_ids=(e.source_ids||[]).filter(i=>i!==id);delete e.source_context?.[id];S.w.sources=(S.w.sources||[]).filter(s=>s.id!==id);e.observations=(e.observations||[]).filter(o=>o.source_id!==id&&!src?.images?.includes(o.source_id));saveWizard();renderWizard();},
+    "source-extract":async el=>{el.disabled=true;el.textContent="Extracting…";try{const data=await api("/api/intake/extract",{body:{source_ids:extraCase().source_ids,llm:connection()}});extraCase().observations=[...(extraCase().observations||[]),...data.output.observations];S.w.extractionIssues=data.output.issues;saveWizard();if(location.hash.startsWith("#/new"))renderWizard();toast("Extraction ready for verification","ok");}catch(e){toast(e.message,"bad");el.disabled=false;el.textContent="Extract with model";}},
+    "obs-add":()=>{const e=extraCase();(e.observations||=[]).push({key:"",value:null,unit:"",observed_at:"",available_at:"",source_id:e.source_ids?.[0]||"",location:"",status:"unverified"});saveWizard();renderWizard();},
+    "obs-remove":el=>{extraCase().observations.splice(+el.dataset.i,1);saveWizard();renderWizard();},
+    "clinical-check":async el=>{el.disabled=true;try{const c=await api("/api/clinical/check",{body:{case:buildCase()}});$("#clinical-result").innerHTML=`<div class="notice ${c.blocking?'warn':'info'}">${icon("shield")}<div>${c.input_blocked?'Verify source records before model review.':c.blocking?'Review can assess available facts; dependent decisions need more information.':'Core checks complete; specialist assessment still applies.'}</div></div>${checkList(c.issues.map(i=>[i.severity==='blocking'?'warn':'info',i.roles.join('/')+': '+i.message]))}<details class="ev"><summary>Checklist and calculations</summary><pre class="json">${jsonHTML(c)}</pre></details>`;}catch(e){toast(e.message,"bad");}finally{el.disabled=false;}},
+    "label-add":()=>showLabelForm(),"run-label-add":()=>showLabelForm(S.run.id),
+    "label-remove":el=>{S.w.labels.splice(+el.dataset.i,1);saveWizard();renderWizard();},
+    "label-save":async el=>{try{const value={kind:$("#label-kind").value,content:$("#label-content").value,occurred_at:$("#label-date").value,source:$("#label-source").value,recorded_by:$("#label-actor").value};if(!value.content.trim()||!value.source.trim()||!value.recorded_by.trim()||!Number.isFinite(Date.parse(value.occurred_at)))throw Error("Complete all label fields with an ISO date and timezone");if(el.dataset.run){await api(`/api/runs/${encodeURIComponent(el.dataset.run)}/labels`,{body:{labels:[value]}});S.run=await api(`/api/runs/${encodeURIComponent(el.dataset.run)}`);renderRunBody();}else{(S.w.labels||=[]).push(value);saveWizard();renderWizard();}closeDrawer();toast("Label saved outside model context","ok");}catch(e){toast(e.message,"bad");}},
+    "patient-load":()=>loadPatient($("#patient-lookup").value.trim()).catch(e=>toast(e.message,"bad")),
+    "patient-select":el=>{ $("#patient-lookup").value=el.dataset.id;loadPatient(el.dataset.id).catch(e=>toast(e.message,"bad"));},
+    "memory-add":()=>memoryForm(),"memory-correct":el=>memoryForm(el.dataset.id),
+    "memory-save":async()=>{try{const entry={kind:$("#mem-kind").value,topic:$("#mem-topic").value,content:$("#mem-content").value,occurred_at:$("#mem-occurred").value,available_at:$("#mem-available").value,source:$("#mem-source").value,roles:["A","B","C","D"]};if($("#mem-encounter").value)entry.encounter_id=$("#mem-encounter").value;if($("#mem-supersedes").value)entry.supersedes=$("#mem-supersedes").value;await api(`/api/patients/${encodeURIComponent(S.patient)}/entries`,{body:{entry,actor:$("#mem-actor").value}});closeDrawer();await viewPatients(S.patient);toast("Patient record saved","ok");}catch(e){toast(e.message,"bad");}},
+    "memory-resolve":el=>{S.pendingResolution={entry_id:el.dataset.id,action:el.dataset.result};openDrawer(`<div class="dh"><h3>Review memory suggestion</h3><button class="btn ghost sm" data-action="close-drawer">${icon("x")}</button></div><div class="db stack"><p>Accepting retains this as a reviewed model suggestion. Add a separately sourced clinical record to confirm a fact.</p><div class="field"><label>Reviewer</label><input class="input" id="resolution-actor"></div><div class="field"><label>Note</label><textarea class="textarea" id="resolution-note"></textarea></div><button class="btn primary" data-action="memory-resolve-save">${esc(el.dataset.result)} suggestion</button></div>`);},
+    "memory-resolve-save":async()=>{try{await api(`/api/patients/${encodeURIComponent(S.patient)}/resolve`,{body:{...S.pendingResolution,actor:$("#resolution-actor").value,note:$("#resolution-note").value}});closeDrawer();await loadPatient(S.patient);}catch(e){toast(e.message,"bad");}},
+  });
+  Object.assign(inputs,{
+    "patient-context":el=>{const e=extraCase();(e.patient||={patient_id:"",encounter_id:"",decision_at:""})[el.dataset.k]=el.value.trim();saveWizard();refreshCaseSide();},
+    "candidate-plan":el=>{extraCase().candidate_plan=el.value;saveWizard();},
+    "observation":el=>{extraCase().observations[+el.dataset.i][el.dataset.k]=el.dataset.k==='value'?(el.value.trim()==='null'?null:parseVal(el.value)):el.value;saveWizard();},
+    "source-context":el=>{const e=extraCase();e.source_context||={};(e.source_context[el.dataset.id]||={available_at:"",reviewer:""})[el.dataset.k]=el.value;saveWizard();},
+  });
+  Object.assign(changes,{
+    "task-type":el=>{extraCase().task_type=el.value;if(el.value!=="review_plan")delete extraCase().candidate_plan;saveWizard();renderWizard();},
+    "observation-status":el=>{extraCase().observations[+el.dataset.i].status=el.value;saveWizard();},
+    "api-style":el=>{S.w.llm.api_style=el.value;saveWizard();},
+    "source-upload":async el=>{try{for(const file of el.files){if(file.size>6*1024*1024)throw Error("File exceeds 6 MB");const encoded=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]);r.onerror=reject;r.readAsDataURL(file);});const source=await api("/api/sources",{body:{filename:file.name,content_base64:encoded}});S.w.sources||=[];if(!S.w.sources.some(s=>s.id===source.id))S.w.sources.push(source);const e=extraCase();e.source_ids=[...new Set([...(e.source_ids||[]),source.id])];e.source_context||={};e.source_context[source.id]||={available_at:"",reviewer:""};saveWizard();}renderWizard();toast("Sources uploaded locally","ok");}catch(e){toast(e.message,"bad");}},
+  });
 
   document.addEventListener("click", (e) => {
     const el = e.target.closest("[data-action]");
@@ -1012,6 +1103,7 @@
     if (parts[0] === "new") return viewNew();
     if (parts[0] === "history") return viewHistory();
     if (parts[0] === "knowledge") return viewKnowledge();
+    if (parts[0] === "patients") return viewPatients();
     if (parts[0] === "settings") return viewSettings();
     if (parts[0] === "guide") return viewGuide();
     if (parts[0] === "run" && parts[1]) return viewRun(decodeURIComponent(parts[1]), new URLSearchParams(query || "").get("tab"));
