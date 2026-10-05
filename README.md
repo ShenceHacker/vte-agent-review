@@ -79,6 +79,15 @@ python -m pip install -e ".[llm,pdf,images]"
 
 知识库保留原文，按约 1,200 字符分段、150 字符重叠；使用 SQLite FTS5 / BM25 全文检索，支持英文词项和中文二元字组。运行开始时固定选中资料的快照并写入 `evidence.json`，后续归档不会改变已有审核的来源。相同内容及元数据重复导入会去重，新版本可作为独立资料保存。新安装的知识库初始为空；可运行 `python scripts/import_reference_pack.py --runs runs` 导入 4 份公开官方来源资料。本机已导入 NICE NG158（英国）及利伐沙班、甲氨蝶呤、复方磺胺甲噁唑说明书（美国）。中国说明书和院内规范由研究者按实际品种补充。测试资料保存在隔离目录中。
 
+### Knowledge base sources
+
+| Name | Source URL |
+| --- | --- |
+| NICE NG158 — Venous thromboembolic diseases: diagnosis, management and thrombophilia testing (UK guideline) | [Official PDF](https://www.nice.org.uk/guidance/ng158/resources/venous-thromboembolic-diseases-diagnosis-management-and-thrombophilia-testing-pdf-66141847001797) |
+| XARELTO (rivaroxaban) prescribing information (US label) | [DailyMed](https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=7e9ab975-db2f-423c-a089-bc5a73313609) |
+| Methotrexate prescribing information (US label) | [DailyMed](https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=22e10810-16fb-4c84-bccf-972405b77ef8) |
+| Sulfamethoxazole and trimethoprim prescribing information (US label) | [DailyMed](https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=7f25bff3-0e86-4bec-b293-54b68347867f) |
+
 [技术栈与论文方法段落](docs/technical-stack.md) · [验证记录](docs/verification.md)
 
 ### 2. 命令行运行
