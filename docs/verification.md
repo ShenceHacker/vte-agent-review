@@ -71,3 +71,14 @@
 - 演示病例和证据均为确定性合成数据。其耗时不能用于报告真实模型加速效果。
 
 未执行：真实模型 API、真实患者数据、临床安全性审计、指南一致性评测。
+
+
+## 2026-10-05 — v0.6 automatic case intake
+
+- 118 Python unit/integration tests pass. New coverage: automatic unverified intake without dates, retained unknowns, null readings, conflicting readings, age/weight unit normalization, historical cutoff, strict research-input compatibility, empty knowledge base, no implicit demo default, and upload/extract/automatic-library-snapshot/workflow completion with an isolated test provider.
+- JavaScript syntax and Git whitespace checks pass.
+- Browser integration on isolated localhost:8879: selecting a synthetic TXT file triggered upload, extraction, automatic evidence selection and a complete ABC/D workflow without further clicks. Uploaded records retained unverified status. Mock provider results are software-test outputs, not real clinical/model validation.
+- Empty-library failure preserved uploaded files and extracted data. Restoring the library and clicking Retry created a new run; extraction records stayed at one (no repeated extraction).
+- Overview and Quick start contain no Run demo entry; the upload page has no mode selector, manual extraction button or evidence step. Knowledge base remains searchable/editable and is used automatically.
+- Final production instance: localhost:8771, v0.6.0, GPT-5.6 Sol, API credentials available, 4 existing knowledge documents. Existing data remains in runs. No real patient record was submitted to the model during this change.
+- The original service was retained after automatic approval rejected stopping/restarting it without a stated reason. Use 8771 for the final version; browser drafts on different ports are separate.

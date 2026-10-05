@@ -47,11 +47,17 @@ def citations(value: Any, evidence_ids: set[str], label: str) -> None:
 
 def validate_case(value: Any) -> dict:
     required = {"case_id", "question", "facts", "missing_information"}
-    optional = {"patient", "task_type", "candidate_plan", "observations", "source_ids", "source_context", "information_responses"}
+    optional = {"patient", "task_type", "candidate_plan", "observations", "source_ids", "source_context", "information_responses", "input_mode", "extraction_issues"}
     if not isinstance(value, dict) or not required <= set(value) or set(value) - required - optional:
         raise ContractError("case: expected core fields and supported patient/source fields; keep research labels separate")
     text(value["case_id"], "case_id")
     text(value["question"], "question")
+    if value.get("input_mode", "reviewed") not in {"reviewed", "automatic"}:
+        raise ContractError("Unknown input mode")
+    automatic = value.get("input_mode") == "automatic"
+    notes = value.get("extraction_issues", [])
+    if not isinstance(notes, list) or len(notes) > 100 or any(not isinstance(n, str) for n in notes):
+        raise ContractError("extraction_issues: expected text list")
     responses = value.get("information_responses", [])
     has_response_facts = isinstance(responses, list) and any(isinstance(r, dict) and r.get("status") in {"provided", "absent"} for r in responses)
     if not isinstance(value["facts"], dict) or (not value["facts"] and not value.get("observations")
@@ -80,8 +86,12 @@ def validate_case(value: Any) -> dict:
             raise ContractError("source_context: supply available_at and reviewer for each source")
         for item in context.values():
             object_fields(item, {"available_at", "reviewer"}, "source context")
-            instant(item["available_at"])
-            text(item["reviewer"], "source reviewer")
+            if not automatic or item["available_at"]:
+                instant(item["available_at"])
+            if not automatic:
+                text(item["reviewer"], "source reviewer")
+            elif not isinstance(item["reviewer"], str):
+                raise ContractError("Source reviewer must be text")
         rows = value.get("observations", [])
         if not isinstance(rows, list) or len(rows) > 200:
             raise ContractError("observations: expected at most 200 records")

@@ -4,11 +4,11 @@ from __future__ import annotations
 import json
 import math
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .patient_memory import instant
 
-RULE_VERSION = "2026-10-04.v2"
+RULE_VERSION = "2026-10-05.v3"
 CG_SOURCE = "https://www.kidney.org/professionals/kdoqi/cockcroft-gault-equation-estimating-creatinine-clearance"
 RIVA_SOURCE = "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=7e9ab975-db2f-423c-a089-bc5a73313609"
 NICE_SOURCE = "https://www.nice.org.uk/guidance/ng158/chapter/Recommendations"
@@ -143,38 +143,67 @@ def clinical_check(case: dict) -> dict:
     facts, response_conflicts = resolved_facts(case)
     issues, observations = [], [o for o in case.get("observations", []) if o["status"] != "excluded"]
     decision = case.get("patient", {}).get("decision_at")
+    automatic = case.get("input_mode") == "automatic"
     def issue(code, text, roles="D", severity="warning"):
         issues.append({"code": code, "message": text, "roles": list(roles), "severity": severity})
     for key in response_conflicts:
         issue("response_conflict_" + key, f"Clinician response for {key} conflicts with an existing fact; reconcile the source fact", "D", "blocking")
-    if not decision:
+    if not decision and not automatic:
         issue("decision_time", "Specify the decision time with timezone", "D", "blocking")
     groups = {}
+    usable = []
+    def observation_time(obs):
+        try:
+            return instant(obs["observed_at"]) if obs.get("observed_at") else None
+        except ValueError:
+            return None
     for obs in observations:
         key = obs["key"]
         if obs["status"] != "confirmed":
-            issue("unverified_observation", f"Verify {key} against source {obs['source_id']} ({obs['location']})", "D", "blocking")
+            if not automatic:
+                issue("unverified_observation", f"Verify {key} against source {obs['source_id']} ({obs['location']})", "D", "blocking")
+                continue
+            issue("model_extracted", f"{key} was extracted by a model, not confirmed by a clinician; retain source and qualify dependent decisions", "ABC", "condition")
+        if obs["value"] is None:
             continue
-        groups.setdefault((key, instant(obs["observed_at"]).isoformat()), []).append(obs)
-        if decision and (instant(obs["observed_at"]) > instant(decision) or instant(obs["available_at"]) > instant(decision)):
+        try:
+            when = observation_time(obs)
+            available = instant(obs["available_at"]) if obs.get("available_at") else None
+        except ValueError:
+            issue("ambiguous_source_date", f"{key} has an ambiguous date; do not infer a treatment timeline", "ABC", "condition")
+            when, available = observation_time(obs), None
+        if automatic and (when is None or available is None):
+            issue("undated_source", f"{key} has incomplete dates; do not assume it is current or available at a historical decision time", "ABC", "condition")
+            if decision:
+                continue
+        groups.setdefault((key, when.isoformat() if when else "unknown"), []).append(obs)
+        if decision and any(t and t > instant(decision) for t in (when, available)):
             issue("future_information", f"{key} was not available at the decision time", "D", "blocking")
+            continue
+        usable.append(obs)
     for (key, when), rows in groups.items():
         values = {json.dumps([r["value"], r["unit"]], sort_keys=True, ensure_ascii=False) for r in rows}
         if len(values) > 1:
-            issue("conflicting_observations", f"Conflicting {key} records at {when}; check units and sources", "D", "blocking")
+            issue("ambiguous_extraction" if automatic else "conflicting_observations", f"Conflicting {key} records at {when}; give conditional alternatives rather than choose a reading", "ABC", "condition" if automatic else "blocking")
     # Observations do not overwrite explicit facts; inconsistent representations block approval.
     for key in {o["key"] for o in observations}:
-        rows = sorted([o for o in observations if o["key"] == key and o["status"] == "confirmed"
-                       and (not decision or (instant(o["available_at"]) <= instant(decision) and instant(o["observed_at"]) <= instant(decision)))], key=lambda o: instant(o["observed_at"]))
+        rows = [o for o in usable if o["key"] == key]
+        if automatic and len({json.dumps([o["value"], o["unit"]], sort_keys=True) for o in rows}) > 1 and (
+                any(observation_time(o) is None for o in rows) or any(len({json.dumps([r["value"], r["unit"]], sort_keys=True) for r in g}) > 1 for (k, _), g in groups.items() if k == key)):
+            issue("ambiguous_extraction", f"{key} has incompatible readings; no single value selected", "ABC", "condition")
+            continue
+        rows.sort(key=lambda o: observation_time(o) or datetime.min.replace(tzinfo=timezone.utc))
         if rows:
             latest = rows[-1]
+            scalar_unit = ((key == "age_years" and latest["unit"].lower() in {"years", "year", "yr", "y", "岁"})
+                           or (key == "weight_kg" and latest["unit"].lower() in {"kg", "公斤"}))
             if key in facts:
                 existing = facts[key].get("value") if isinstance(facts[key], dict) and "value" in facts[key] else facts[key]
                 unit = facts[key].get("unit", "") if isinstance(facts[key], dict) else ""
-                if existing != latest["value"] or unit != latest["unit"]:
+                if existing != latest["value"] or (unit != latest["unit"] and not (scalar_unit and not unit)):
                     issue("fact_source_conflict", f"Fact {key} differs from its latest confirmed source; reconcile explicitly", "D", "blocking")
             else:
-                facts[key] = {"value": latest["value"], "unit": latest["unit"], "observed_at": latest["observed_at"], "available_at": latest["available_at"]} if latest["unit"] else latest["value"]
+                facts[key] = {"value": latest["value"], "unit": latest["unit"], "observed_at": latest["observed_at"], "available_at": latest["available_at"]} if latest["unit"] and not scalar_unit else latest["value"]
     checks = []
     for key, label, roles, critical in FIELD_SPECS:
         present = known(facts.get(key))
@@ -238,7 +267,7 @@ def clinical_check(case: dict) -> dict:
     if case.get("task_type", "generate_plan") == "review_plan" and not case.get("candidate_plan"):
         issue("candidate_plan", "Prescription review requires the plan to review", "D", "blocking")
     for source_id, context in case.get("source_context", {}).items():
-        if decision and instant(context["available_at"]) > instant(decision):
+        if decision and context.get("available_at") and instant(context["available_at"]) > instant(decision):
             issue("future_source", "Source " + source_id + " was not available at the decision time", "D", "blocking")
     data_errors = {"decision_time", "conflicting_observations", "fact_source_conflict", "unverified_observation"}
     return {"rule_version": RULE_VERSION, "checklist": checks, "issues": issues, "calculations": calculations,

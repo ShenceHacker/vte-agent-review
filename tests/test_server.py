@@ -154,7 +154,7 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 403)
 
     def test_completed_stream_replays_and_exports_exact_reviewed_result(self):
-        _, start = self.request("/api/runs", method="POST", body={"scenario": "targeted", "pace": 0})
+        _, start = self.request("/api/runs", method="POST", body={"mode": "demo", "scenario": "targeted", "pace": 0})
         run_id = start["id"]
         _, stream = self.request(f"/api/runs/{run_id}/stream")
         self.assertIn(b"event: done", stream)

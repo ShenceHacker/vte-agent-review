@@ -251,7 +251,7 @@
       const n = (status) => runs.filter((r) => r.status === status).length;
       const metric = (value, label, ic) => `<div class="metric-card"><div class="metric-top">${label}${icon(ic)}</div><div class="metric-value">${value}</div></div>`;
       const recent = runs.length ? runTable(runs.slice(0, 5)) : `<div class="recent-empty"><div class="empty-file">${icon("file")}</div><b>No recommendations yet</b><a href="#/new" class="btn sm" style="margin-top:14px">${icon("plus")}New recommendation</a></div>`;
-      setView(`<div class="dashboard-stack"><div class="dashboard-head"><h1>Overview</h1><div class="row wrap"><button class="btn" data-action="quick-demo" data-s="targeted">${icon("play")}Run demo</button><a class="btn primary" href="#/new">${icon("plus")}New recommendation</a></div></div>
+      setView(`<div class="dashboard-stack"><div class="dashboard-head"><h1>Overview</h1><div class="row wrap"><a class="btn primary" href="#/new">${icon("plus")}New recommendation</a></div></div>
       <section class="agent-team"><div class="team-heading"><h2>Clinical team</h2><span>3 specialists · 1 coordinator</span></div><div class="robot-grid">${[...ROLES,"D"].map((r) => `<button class="robot-card ${r}" data-action="agent-profile" data-r="${r}" aria-label="View Agent ${r}: ${ROLE[r].short}"><span class="robot-id">AGENT ${r}</span><img src="/static/agent-${r.toLowerCase()}.svg" alt="Agent ${r} robot wearing a white coat"><strong>${ROLE[r].short}</strong><span class="robot-description">${({A:"Benefit & duration",B:"Eligibility & dosing",C:"Bleeding & constraints",D:"Synthesis & revision"})[r]}</span><span class="robot-details">View role ${icon("chevron")}</span></button>`).join("")}</div><div class="team-process"><span>${icon("users")}Parallel assessment</span>${icon("chevron")}<span>${icon("layers")}Coordinated draft</span>${icon("chevron")}<span>${icon("refresh")}Targeted review</span></div></section>
       <div class="dashboard-stats">${metric(runs.length,"Total runs","folder")}${metric(n("approved"),"Agent-approved","shield")}${metric(n("needs_human_review"),"Needs human review","alert")}${metric(stats.documents,"Knowledge documents","book")}</div>
       <div class="dashboard-bottom"><section class="card recent-card"><div class="card-h"><h3>Recent recommendations</h3><a href="#/history" class="btn ghost sm">View all${icon("chevron")}</a></div>${recent}</section><section class="card library-summary"><div class="card-h"><h3>Knowledge base</h3>${icon("database")}</div><div class="card-b"><div class="library-numbers"><b>${stats.documents}<small>documents</small></b><b>${stats.chunks}<small>passages</small></b></div><div class="library-status">${icon("check")}Full-text search ready</div><a class="btn primary" href="#/knowledge" style="width:100%;margin-top:22px">${icon("book")}Open library</a></div></section></div></div>`);
@@ -286,13 +286,13 @@
   /* ================= new review wizard ================= */
   const W_KEY = "vte.wizard.v1";
   const blankCase = () => ({ case_id: "", question: "", facts: [["", ""]], missing: [] });
-  const defaultWizard = () => ({ step: 0, caseMode: "form", case: blankCase(), evidence: null, evidenceName: "", evidenceCheck: null, mode: "demo", scenario: "targeted", useDemoData: true, pace: 0.8, settings: null, llm: { base_url: "", model: "", role_models: {} } });
-  function loadWizard() { try { const w = JSON.parse(localStorage.getItem(W_KEY)); if (w && w.case) return Object.assign(defaultWizard(), w); } catch { /* ignore */ } return defaultWizard(); }
+  const defaultWizard = () => ({ step: 0, caseMode: "form", case: blankCase(), evidence: null, evidenceName: "", evidenceCheck: null, mode: "llm", scenario: "targeted", useDemoData: false, pace: 0.8, settings: null, llm: { base_url: "", model: "", role_models: {} } });
+  function loadWizard() { try { const w = JSON.parse(localStorage.getItem(W_KEY)); if (w && w.case) return Object.assign(defaultWizard(), w, {mode:"llm", step:0}); } catch { /* ignore */ } return defaultWizard(); }
   function saveWizard() { try { localStorage.setItem(W_KEY, JSON.stringify(S.w)); } catch { /* quota exceeded: keep in memory */ } }
   function caseFromJSON(o) {
     if (!o || typeof o !== "object" || Array.isArray(o) || typeof o.case_id !== "string" || typeof o.question !== "string" || !o.facts || typeof o.facts !== "object" || Array.isArray(o.facts) || !Array.isArray(o.missing_information) || o.missing_information.some((v) => typeof v !== "string")) throw new Error("Expected case_id, question, a facts object and a missing_information string array");
     const facts = Object.entries(o.facts || {}).map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)]);
-    const extra = Object.fromEntries(["patient","task_type","candidate_plan","observations","source_ids","source_context","information_responses"].filter(k=>k in o).map(k=>[k,o[k]]));
+    const extra = Object.fromEntries(["patient","task_type","candidate_plan","observations","source_ids","source_context","information_responses","input_mode","extraction_issues"].filter(k=>k in o).map(k=>[k,o[k]]));
     return { case_id: String(o.case_id || ""), question: String(o.question || ""), facts: facts.length ? facts : [["", ""]], missing: [...new Set((o.missing_information || []).map(String))], extra };
   }
   function parseVal(v) {
@@ -314,8 +314,8 @@
     out.push(c.case_id ? ["ok", `Case ID: ${c.case_id}`] : ["bad", "Enter a de-identified case ID"]);
     out.push(c.question ? ["ok", "Decision question provided"] : ["bad", "Enter a decision question"]);
     const n = Object.keys(c.facts).length + (c.information_responses||[]).filter(r=>["provided","absent"].includes(r.status)).length;
-    const sourced = (c.observations||[]).filter(o=>o.status==='confirmed').length;
-    out.push(n || sourced ? ["ok", `Facts entered: ${n} · Confirmed source readings: ${sourced}`] : ["bad", "Enter a verified patient fact or confirm a sourced observation"]);
+    const sourced = (c.observations||[]).filter(o=>(o.status==='confirmed'||c.input_mode==='automatic')&&o.status!=='excluded'&&o.value!==null).length;
+    out.push(n || sourced ? ["ok", `Facts entered: ${n} · Source readings: ${sourced}`] : ["bad", "Enter a verified patient fact or confirm a sourced observation"]);
     const keys = S.w.case.facts.map(([k]) => String(k).trim()).filter(Boolean);
     if (new Set(keys).size !== keys.length) out.push(["bad", "Merge duplicate fields before starting"]);
     out.push(c.missing_information.length ? ["warn", `Missing fields: ${c.missing_information.length} (included in the assessment)`] : ["info", "No missing information listed"]);
@@ -326,16 +326,23 @@
 
   async function viewNew() { S.w = S.w || loadWizard(); if (!S.w.settings) S.w.settings = defaultsToSettings(); S.evMap = Object.fromEntries((S.w.evidence || []).map((d) => [d.id, d])); await hydrateCaseSources(); if(location.hash.startsWith("#/new"))renderWizard(); }
   async function hydrateCaseSources(){const c=S.w.case;const ids=c.extra?.source_ids||[];const records=await Promise.all(ids.map(async id=>{try{return await api(`/api/sources/${encodeURIComponent(id)}`);}catch{return {id,name:id+" (source unavailable)",mime:"text/plain",images:[]};}}));if(c===S.w.case)S.w.sources=records;}
+  let intakeBusy = false, intakeStage = "", intakeError = "";
   function renderWizard() {
-    const w = S.w;
-    const steps = [["Case details", "De-identified patient facts"], ["Evidence", "Select sources"], ["Run setup", "Demo or model"]];
-    const body = [stepCase, stepEvidence, stepRun][w.step]();
-    setView(`<div class="page-h"><div><h1 class="h1">New recommendation</h1><p class="lead">Case, evidence and run configuration.</p></div>
-      <button class="btn ghost" data-action="w-reset">${icon("refresh")}Reset</button></div>
-      <div class="steps">${steps.map(([t, s], i) => `<button class="step ${i === w.step ? "on" : ""} ${i < w.step ? "done" : ""}" data-action="w-step" data-i="${i}"><span class="n">${i < w.step ? icon("check") : i + 1}</span><span><b>${t}</b><span class="s">${s}</span></span></button>`).join("")}</div>
-      ${body}
-      <div class="row" style="margin-top:20px">${w.step > 0 ? `<button class="btn" data-action="w-prev">${icon("arrowLeft")}Back</button>` : ""}<span class="spacer"></span>${w.step < 2 ? `<button class="btn primary" data-action="w-next">Next${icon("chevron")}</button>` : ""}</div>`, crumb("New recommendation"));
-    if (w.step === 0) refreshCaseSide();
+    const openSummaries=$$("#view details[open]").map(d=>d.querySelector("summary")?.textContent);
+    const w=S.w; w.mode="llm"; w.step=0; w.settings ||= defaultsToSettings();
+    const env=S.info?.env||{};
+    setView(`<div class="page-h"><div><h1 class="h1">New recommendation</h1><p class="lead">Upload a case. Extraction, evidence retrieval and specialist review run automatically.</p></div>
+      <button class="btn ghost" data-action="w-reset" ${intakeBusy?"disabled":""}>${icon("refresh")}New case</button></div>
+      <div class="row wrap" style="margin-bottom:20px"><span class="chip">${icon("cpu")}${esc(w.llm.model||env.model||"Configure model in Settings")}</span><span class="chip">${icon("database")}Automatic knowledge retrieval</span><a class="btn ghost sm" href="#/settings">Settings</a></div>
+      ${intakeStage?`<div class="notice info" role="status" style="margin-bottom:16px">${intakeBusy?'<span class="spinner"></span>':icon("check")}<div>${esc(intakeStage)}</div></div>`:""}
+      ${intakeError?`<div class="notice warn" role="alert" style="margin-bottom:16px"><div>${esc(intakeError)}<p>Your uploaded files are saved. Update Settings or Knowledge base if needed, then retry.</p><button class="btn" data-action="intake-retry">Retry</button></div></div>`:""}
+      <fieldset style="border:0;padding:0;margin:0;min-width:0" ${intakeBusy?"disabled":""}>
+      ${intakeHTML()}
+      <details class="card" style="margin-top:20px"><summary style="padding:20px;cursor:pointer">Optional case details & research settings</summary><div class="card-b">${stepCase()}</div></details>
+      <div class="row" style="margin-top:16px"><span class="spacer"></span><button class="btn primary" data-action="start">${icon("play")}Generate recommendations</button></div>
+      </fieldset>`,crumb("New recommendation"));
+    $$("#view details").forEach(d=>{if(openSummaries.includes(d.querySelector("summary")?.textContent))d.open=true;});
+    refreshCaseSide();
   }
   const factRow = ([k, v], i) => `<div class="kv"><input class="input" data-input="fact-k" data-i="${i}" value="${esc(k)}" placeholder="Field, e.g. CrCl"><input class="input" data-input="fact-v" data-i="${i}" value="${esc(v)}" placeholder="Value and unit"><button class="btn ghost sm" data-action="fact-del" data-i="${i}" title="Remove">${icon("x")}</button></div>`;
   function stepCase() {
@@ -357,106 +364,76 @@
         <div class="row"><div class="seg"><button data-action="case-mode" data-m="form" class="${w.caseMode === "form" ? "on" : ""}">${icon("pen")}Form</button><button data-action="case-mode" data-m="json" class="${w.caseMode === "json" ? "on" : ""}">${icon("code")}JSON</button></div></div></div>
         <div class="card-b">${w.caseMode === "form" ? form : json}</div>
         <div class="card-h" style="border-top:1px solid var(--line-2);border-bottom:0">
-          <div class="row wrap"><button class="btn sm" data-action="case-demo">${icon("flask")}Workflow demo</button><button class="btn sm" data-action="case-clinical">${icon("file")}Clinical example</button>
+          <div class="row wrap">
           <label class="btn sm" tabindex="0" role="button">${icon("upload")}Import JSON<input type="file" accept=".json,application/json" data-change="case-file" hidden></label></div>
           <button class="btn ghost sm danger" data-action="case-clear">${icon("trash")}Clear</button></div>
       </div>
       <div class="stack">
         <div class="card"><div class="card-h"><h3>${icon("shield")}Validation</h3></div><div class="card-b" id="case-check"></div></div>
         <details class="card preview-details"><summary>View structured case</summary><pre class="json" id="case-preview"></pre></details>
-      </div></div>${intakeHTML()}`;
+      </div></div>`;
   }
   function refreshCaseSide() {
     const el = $("#case-check"); if (el) el.innerHTML = checkList(caseChecks());
     const pv = $("#case-preview"); if (pv) pv.innerHTML = jsonHTML(buildCase());
   }
-  function stepEvidence() {
-    const w = S.w, ev = w.evidence, ck = w.evidenceCheck;
-    const left = ev ? `
-      <div class="card-h"><h3>${icon("database")}${esc(w.evidenceName || "Evidence")}</h3><div class="row">
-        <label class="btn sm" tabindex="0" role="button">${icon("upload")}Replace<input type="file" accept=".json,application/json" data-change="evidence-file" hidden></label>
-        <button class="btn ghost sm danger" data-action="ev-clear">${icon("trash")}Remove</button></div></div>
-      <div class="table-wrap"><table class="table"><thead><tr><th>ID / Title</th><th>Version</th><th>Roles</th><th>Source</th></tr></thead><tbody>
-      ${ev.map((d) => `<tr class="click" data-action="evidence" data-id="${esc(d.id)}"><td><div class="mono small muted">${esc(d.id)}</div><div style="font-weight:600">${esc(d.title)}</div></td><td class="small">${esc(d.version)}</td><td>${(d.roles || []).map((r) => roleTag(r, 20)).join(" ")}</td><td>${d.synthetic ? badge("Synthetic", "warn") : badge("Source material", "ok")}</td></tr>`).join("")}
-      </tbody></table></div>` : `
-      <div class="card-h"><h3>${icon("database")}Evidence</h3></div>
-      <div class="card-b">
-        <label tabindex="0" role="button" class="dropzone" style="display:block">${icon("upload")}<div style="font-weight:600;color:var(--text-2)">Drop or select an evidence JSON file</div><div class="small">Array of evidence entries with source and version metadata</div><input type="file" accept=".json,application/json" data-change="evidence-file" hidden></label>
-        <div class="row" style="margin-top:14px"><button class="btn sm" data-action="ev-demo">${icon("flask")}Load synthetic demo evidence</button></div>
-        <details style="margin-top:16px"><summary class="muted small" style="cursor:pointer">Evidence format</summary><pre class="json" style="margin-top:10px">${jsonHTML([{ id: "SOURCE-SECTION-001", title: "Source title", source: "Source URL or document reference", version: "Version or date", text: "Verified source passage", roles: ["A", "B", "C"], synthetic: false }])}</pre></details>
-      </div>`;
-    const right = ck && ck.ok ? `<div class="grid g-2" style="gap:10px">
-        <div class="card stat" style="box-shadow:none"><div><div class="stat-v">${ck.count}</div><div class="stat-l">Passages</div></div></div>
-        <div class="card stat" style="box-shadow:none"><div><div class="stat-v" style="color:${ck.synthetic ? "var(--warn)" : "var(--ok)"}">${ck.synthetic}</div><div class="stat-l">Synthetic passages</div></div></div></div>
-        <div class="muted small" style="margin:14px 0 8px">Eligible passages by role</div>
-        <div class="appr">${ROLES.map((r) => `<div class="appr-cell ${ck.roles[r] ? "ok" : "no"}">${roleTag(r)}<div><div class="lbl">${ROLE[r].short}</div><b>Passages: ${ck.roles[r]}</b></div></div>`).join("")}</div>
-        ${ROLES.some((r) => !ck.roles[r]) ? `<div class="notice warn" style="margin-top:12px">${icon("alert")}<div>One or more specialists have no eligible evidence.</div></div>` : ""}
-        ${ck.synthetic ? `<div class="notice warn" style="margin-top:12px">${icon("flask")}<div>Synthetic material can only be used in demo mode.</div></div>` : ""}`
-      : `<div class="muted">Select knowledge documents or import evidence before a model run.</div>`;
-    return `<div class="evidence-library-link"><div>${icon("database")}<span>${w.knowledgeIds?.length ? `Library documents selected: ${w.knowledgeIds.length}` : "Select saved documents from your knowledge base"}</span></div><a class="btn" href="#/knowledge">${icon("book")}Choose from library</a></div><div class="grid g-side"><div class="card">${left}</div>
-      <div class="stack"><div class="card"><div class="card-h"><h3>${icon("shield")}Evidence check</h3></div><div class="card-b">${right}</div></div>
-      <div class="notice info">${icon("info")}<div>Citations reference the passages retrieved for this run.</div></div></div></div>`;
-  }
   function startChecks() {
-    const w = S.w, items = [];
-    const env = S.info?.env || {};
-    if (w.mode === "demo") {
-      items.push(["ok", "Offline demo using deterministic responses"]);
-      if (w.useDemoData) items.push(["ok", "Use the built-in synthetic case and evidence"]);
-      else {
-        items.push(...caseChecks().filter(([s]) => s !== "info"));
-        items.push(w.evidence ? ["ok", `Evidence passages: ${w.evidence.length}`] : ["warn", "Using built-in synthetic evidence"]);
-      }
-    } else {
-      items.push(...caseChecks().filter(([s]) => s !== "info"));
-      const ck = w.evidenceCheck;
-      if (!w.evidence) items.push(["bad", "Select or import evidence for a model run"]);
-      else if (ck?.synthetic) items.push(["bad", `Evidence contains ${ck.synthetic} synthetic entries; not available in model mode`]);
-      else items.push(["ok", `Evidence passages: ${w.evidence.length}`]);
-      if (ck?.ok) for (const r of ROLES) if (!ck.roles[r]) items.push(["warn", `${r} has no eligible evidence`]);
-      items.push(w.llm.model || env.model ? ["ok", `Model: ${w.llm.model || env.model}`] : ["bad", "Enter a model name"]);
-      items.push(apiKey || env.api_key_set ? ["ok", apiKey ? "API key is set for this session" : "Using the server API key"] : ["bad", "Enter an API key"]);
-      if (S.info && !S.info.httpx) items.push(["bad", 'Install the model adapter: python -m pip install -e ".[llm]"']);
-      items.push(["warn", "Case and evidence will be sent to the configured endpoint"]);
+    const w=S.w, env=S.info?.env||{}, items=caseChecks().filter(([s])=>s!=="info");
+    if(!(w.llm.model||env.model))items.push(["bad","Configure a model in Settings"]);
+    if(!(apiKey||env.api_key_set))items.push(["bad","Configure an API key in Settings"]);
+    if(S.info&&!S.info.httpx)items.push(["bad","The model adapter is not installed"]);
+    for(const [key,min] of [["max_revisions",0],["concurrency",1],["timeout",1],["top_k",1]]){
+      const n=Number(w.settings?.[key]);if(!Number.isFinite(n)||!Number.isInteger(n)||n<min)items.push(["bad",`Invalid setting: ${key}`]);
     }
-    const limits = [["max_revisions", "Max revisions", 0], ["concurrency", "Concurrency", 1], ["timeout", "Timeout", 1], ["top_k", "Passages", 1]];
-    for (const [key, label, min] of limits) {
-      const n = Number(w.settings?.[key]);
-      if (!Number.isFinite(n) || !Number.isInteger(n) || n < min || String(w.settings?.[key]).trim() === "") items.push(["bad", `${label} must be an integer ≥ ${min}`]);
-    }
-    return { items, ok: !items.some(([s]) => s === "bad") };
+    return {items,ok:!items.some(([s])=>s==="bad")};
   }
-  function stepRun() {
-    const w = S.w, env = S.info?.env || {}, sc = S.info?.scenarios || {};
-    const modeCard = (m, ic, c, t, d) => `<button class="mode-card ${w.mode === m ? "on" : ""}" data-action="w-mode" data-m="${m}"><div class="stat-ic" style="background:var(--${c}-soft);color:var(--${c})">${icon(ic)}</div><div><b>${t}</b><p>${d}</p></div></button>`;
-    const demo = `<div class="card"><div class="card-h"><h3>${icon("flask")}Demo scenarios</h3><span class="muted small">Choose a workflow scenario</span></div><div class="card-b">
-        <div class="grid g-3" style="gap:10px">${Object.entries(sc).map(([k, v]) => `<button class="scenario ${w.scenario === k ? "on" : ""}" data-action="w-scenario" data-s="${k}"><b>${esc(v.title)} ${v.expect === "approved" ? badge("Approved", "ok", "nodot") : badge("Human review", "warn", "nodot")}</b><p>${esc(v.desc)}</p></button>`).join("")}</div>
-        <div class="hr"></div>
-        <div class="grid g-2"><div class="field"><label>Demo delay per call: <span id="pace-v">${Number(w.pace).toFixed(1)}</span> s</label><input type="range" min="0" max="2" step="0.1" value="${w.pace}" data-input="pace"></div>
-        <label class="row" style="gap:8px;cursor:pointer"><input type="checkbox" data-change="use-demo" ${w.useDemoData ? "checked" : ""}> Use the built-in synthetic case and evidence</label></div>
-      </div></div>`;
-    const llm = `<div class="card"><div class="card-h"><h3>${icon("cpu")}Model endpoint</h3><span class="muted small">Structured output & tools</span></div><div class="card-b stack" style="gap:14px">${apiStyleHTML()}
-        <div class="grid g-2"><div class="field"><label>Base URL</label><input class="input" data-input="llm" data-k="base_url" value="${esc(w.llm.base_url)}" placeholder="${esc(env.base_url || "https://api.openai.com/v1")}"></div>
-        <div class="field"><label>Model name</label><input class="input" data-input="llm" data-k="model" value="${esc(w.llm.model)}" placeholder="${esc(env.model || "Model identifier")}"></div></div>
-        <div class="field"><label>API Key</label><input class="input" type="password" autocomplete="off" data-input="apikey" value="${esc(apiKey)}" placeholder="${env.api_key_set ? "Server key is configured; leave blank to use it" : "sk-…"}"><span class="hint">${icon("lock")} Kept in this page session only.</span></div>
-        <details><summary class="muted small" style="cursor:pointer">Assign models by role (optional)</summary><div class="grid g-4" style="margin-top:10px">${[...ROLES, "D"].map((r) => `<div class="field"><label>${r} · ${ROLE[r].short}</label><input class="input" data-input="llm-role" data-r="${r}" value="${esc(w.llm.role_models?.[r] || "")}" placeholder="${esc(env.role_models?.[r] || "Default")}"></div>`).join("")}</div></details>
-        <div class="notice warn">${icon("alert")}<div>The configured endpoint receives the case and selected evidence.</div></div>
-      </div></div>`;
-    const s = w.settings;
-    const num = (k, l, h, min, step = 1) => `<div class="field"><label>${l}</label><input class="input" type="number" min="${min}" step="${step}" data-input="setting" data-k="${k}" value="${esc(s[k])}"><span class="hint">${h}</span></div>`;
-    const { items, ok } = startChecks();
-    return `<div class="grid g-side"><div class="stack">
-      <div class="grid g-2">${modeCard("demo", "flask", "brand", "Demo", "Explore the workflow without an API key")}${modeCard("llm", "cpu", "ok", "Model", "Use your configured model endpoint")}</div>
-      ${w.mode === "demo" ? demo : llm}
-      <div class="card"><div class="card-h"><h3>${icon("settings")}Advanced settings</h3></div><div class="card-b"><div class="grid g-4">
-        ${num("max_revisions", "Max revisions", "Maximum revisions by D", 0)}${num("concurrency", "Concurrency", "Concurrent model calls", 1)}${num("timeout", "Timeout (seconds)", "Timeout per agent session", 1)}${num("top_k", "Passages per role", "Top-K passages", 1)}
-      </div></div></div>
-    </div>
-    <div class="card" style="position:sticky;top:0"><div class="card-h"><h3>${icon("target")}Preflight checks</h3></div><div class="card-b">
-      ${checkList(items)}
-      <button class="btn primary lg" style="width:100%;margin-top:18px" data-action="start" ${ok ? "" : "disabled"}>${icon("play")}${w.mode === "demo" ? "Run demo" : extraCase().task_type === "review_plan" ? "Review existing plan" : "Generate recommendations"}</button>
-      <div class="muted small" style="margin-top:10px">Progress and results are saved locally.</div>
-    </div></div></div>`;
+  function initializeUploadCase(){
+    S.w.case.case_id ||= "CASE-"+crypto.randomUUID().slice(0,8);
+    S.w.case.question ||= "Recommend VTE anticoagulation treatment, including drug choice, dose, duration, monitoring and explicit assumptions based on the available case information.";
+    extraCase().input_mode="automatic";
+  }
+  async function submitRecommendation(){
+    initializeUploadCase();
+    const checks=startChecks();
+    if(!checks.ok)throw Error(checks.items.filter(([s])=>s==="bad").map(([,t])=>t).join(". "));
+    const body={mode:"llm",retrieval:"automatic",case:buildCase(),settings:S.w.settings,llm:connection(),research_labels:S.w.labels||[]};
+    if(S.w.parentRunId)body.parent_run_id=S.w.parentRunId;
+    intakeStage="Retrieving evidence and starting specialist review…";saveWizard();renderWizard();
+    const {id}=await api("/api/runs",{body});
+    S.w.lastSubmittedRun=id; intakeStage="Recommendation started. Open Recommendations to view progress."; saveWizard(); location.hash=`#/run/${id}`;
+  }
+  async function runUploadedCase(files=[]){
+    if(intakeBusy)return;
+    const wizard=S.w, caseRef=S.w.case;
+    intakeBusy=true;intakeError="";intakeStage="Preparing case…";renderWizard();
+    try{
+      const selected=[...files];
+      if(selected.some(f=>f.size>6*1024*1024))throw Error("Each file must be 6 MB or smaller");
+      initializeUploadCase();
+      for(const file of selected){
+        intakeStage=`Uploading ${file.name}…`;renderWizard();
+        const encoded=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]);r.onerror=reject;r.readAsDataURL(file);});
+        const source=await api("/api/sources",{body:{filename:file.name,content_base64:encoded}});
+        S.w.sources||=[];if(!S.w.sources.some(s=>s.id===source.id))S.w.sources.push(source);
+        const e=extraCase();e.source_ids=[...new Set([...(e.source_ids||[]),source.id])];e.source_context||={};e.source_context[source.id]||={available_at:"",reviewer:""};saveWizard();
+      }
+      const ids=extraCase().source_ids||[];
+      if(!ids.length)throw Error("Upload a case file first");
+      const signature=[...ids].sort().join("|");
+      if(S.w.extractedSources!==signature){
+        intakeStage="Reading case documents automatically…";renderWizard();
+        const data=await api("/api/intake/extract",{body:{source_ids:ids,llm:connection()}});
+        if(S.w!==wizard||S.w.case!==caseRef)throw Error("Case changed during extraction; retry for the current case");
+        // Keep clinician edits, replace only previous machine readings. Never mark them confirmed.
+        const kept=(extraCase().observations||[]).filter(o=>o.status!=="unverified");
+        const edited=new Set(kept.map(o=>JSON.stringify([o.source_id,o.key,o.location])));
+        extraCase().observations=[...kept,...data.output.observations.filter(o=>!edited.has(JSON.stringify([o.source_id,o.key,o.location])))];
+        S.w.extractionIssues=data.output.issues; extraCase().extraction_issues=data.output.issues; S.w.extractedSources=signature;saveWizard();
+      }
+      if(!(extraCase().observations||[]).some(o=>o.status!=="excluded"&&o.value!==null)&&!Object.keys(buildCase().facts).length)throw Error("No readable clinical information was found. Upload a clearer document or add case details.");
+      await submitRecommendation();
+    }catch(e){intakeError=e.message;intakeStage="Unable to complete the request";toast(e.message,"bad");}
+    finally{intakeBusy=false;if(location.hash.startsWith("#/new"))renderWizard();}
   }
 
   /* ================= run detail ================= */
@@ -725,20 +702,20 @@
     catch (e) { if (route !== routeVersion) return; toast(e.message, "bad"); }
     const i = S.info || {}, env = i.env || {}, w = S.w;
     const row = (k, v) => `<dt>${esc(k)}</dt><dd>${v}</dd>`;
-    setView(`<div class="page-h"><div><h1 class="h1">Settings</h1><p class="lead">Configure model access and role assignments.</p></div>${badge(env.api_key_set || apiKey ? "Credentials available" : "Demo ready", env.api_key_set || apiKey ? "ok" : "gray")}</div>
+    setView(`<div class="page-h"><div><h1 class="h1">Settings</h1><p class="lead">Configure model access and role assignments.</p></div>${badge(env.api_key_set || apiKey ? "Credentials available" : "Model not configured", env.api_key_set || apiKey ? "ok" : "gray")}</div>
       <div class="grid g-side"><div class="stack"><section class="card"><div class="card-h"><h3>${icon("cpu")}Model connection</h3><span class="muted small">Structured output & tools</span></div><div class="card-b stack">${apiStyleHTML()}<div class="profile-fields">
       <div class="field"><label>Base URL</label><input class="input" data-input="llm" data-k="base_url" value="${esc(w.llm.base_url)}" placeholder="${esc(env.base_url || "https://api.openai.com/v1")}"></div>
       <div class="field"><label>Default model</label><input class="input" data-input="llm" data-k="model" value="${esc(w.llm.model)}" placeholder="${esc(env.model || "Model identifier from your provider")}"></div>
       <div class="field wide"><label>API Key</label><input class="input" type="password" autocomplete="off" data-input="apikey" value="${esc(apiKey)}" placeholder="${env.api_key_set ? "Server credentials are available" : "Model service API key"}"><span class="hint">API key stays in memory. Endpoint and model names are saved locally.</span></div></div>
       <div class="row wrap"><button class="btn primary" data-action="profile-save">${icon("check")}Save configuration</button><button class="btn ghost" data-action="clear-key">Clear session key</button><a class="btn ghost" href="#/new">New recommendation${icon("chevron")}</a></div></div></section>
       <section class="card"><div class="card-h"><h3>${icon("users")}Role assignments</h3><span class="muted small">Optional · inherits the default model</span></div><div class="card-b profile-fields">${[...ROLES,"D"].map((r) => `<div class="field"><label>${r} · ${ROLE[r].short}</label><input class="input" data-input="llm-role" data-r="${r}" value="${esc(w.llm.role_models?.[r] || "")}" placeholder="${esc(env.role_models?.[r] || "Use default model")}"></div>`).join("")}</div></section>
-      <div class="notice info">${icon("info")}<div>Choose Model mode in a new recommendation to use this connection.</div></div></div>
+      <div class="notice info">${icon("info")}<div>All new recommendations use this model connection automatically.</div></div></div>
       <div class="stack"><section class="card"><div class="card-h"><h3>${icon("activity")}Environment</h3></div><div class="card-b"><dl class="facts">${row("App version",`v${esc(i.version)}`)}${row("Prompt version",esc(i.prompt_version))}${row("Model adapter",i.httpx ? badge("httpx installed","ok") : badge("Not installed","warn"))}${row("Database", "SQLite + FTS5")}${row("Library", `${i.knowledge?.documents || 0} documents`)}${row("Default retrieval",`Top-${i.defaults?.top_k}`)}${row("Concurrency / revisions",`${i.defaults?.max_concurrency} concurrent / ${i.defaults?.max_revisions} max revisions`)}${row("Timeout",`${i.defaults?.call_timeout} s`)}</dl></div></section>
       <section class="card"><div class="card-h"><h3>${icon("folder")}Local storage</h3></div><div class="card-b"><p class="small muted" style="margin-top:0">Run records are stored in:</p><div class="mono" style="overflow-wrap:anywhere;font-size:11px">${esc(i.runs_dir)}</div><div class="hr"></div><p class="small muted">API keys are not stored in run records.</p><a href="#/guide" class="btn sm">Quick start${icon("chevron")}</a></div></section></div></div>`,crumb("Settings"));
   }
   function viewGuide() {
-    const steps = [["Case","Enter a de-identified case, a decision question and verified facts."],["Knowledge","Add source documents to the library. Search passages and select documents for the recommendation."],["Run","Use the offline demo or configure a model connection in Settings."],["Collaboration","A, B and C assess independently. D combines their findings into a draft."],["Revision","Specialists review their sections. D revises issues; affected specialists review again."],["Review & export","Inspect sources and version changes, record a physician decision and export the report."]];
-    setView(`<div class="page-h"><h1 class="h1">Quick start</h1><button class="btn primary" data-action="quick-demo" data-s="targeted">${icon("play")}Run demo</button></div><div class="guide-grid">${steps.map(([title,text],n) => `<section class="card guide-step"><span class="number">0${n+1}</span><h3>${title}</h3><p>${text}</p></section>`).join("")}</div>`,crumb("Quick start"));
+    const steps = [["Case","Upload de-identified Word documents, report screenshots or text. Extraction starts automatically."],["Knowledge","Maintain guidelines and drug labels in Knowledge base. Relevant passages are retrieved automatically for each case."],["Run","Configure your model connection once in Settings. New uploads automatically start the recommendation workflow."],["Collaboration","A, B and C assess independently. D combines their findings into a draft."],["Revision","Specialists review their sections. D revises issues; affected specialists review again."],["Review & export","Inspect sources and version changes, record a physician decision and export the report."]];
+    setView(`<div class="page-h"><h1 class="h1">Quick start</h1></div><div class="guide-grid">${steps.map(([title,text],n) => `<section class="card guide-step"><span class="number">0${n+1}</span><h3>${title}</h3><p>${text}</p></section>`).join("")}</div>`,crumb("Quick start"));
   }
 
   /* ================= actions ================= */
@@ -749,15 +726,10 @@
     "open-run": (el) => { location.hash = `#/run/${encodeURIComponent(el.dataset.id)}`; },
     "close-drawer": closeDrawer,
     evidence: (el) => openEvidence(el.dataset.id),
-    "quick-demo": async (el) => {
-      el.disabled = true;
-      try { const { id } = await api("/api/runs", { body: { mode: "demo", scenario: el.dataset.s || "targeted", pace: 0.8 } }); location.hash = `#/run/${id}`; }
-      catch (e) { toast(e.message, "bad"); el.disabled = false; }
-    },
     "hist-f": (el) => { S.hist.f = el.dataset.f; $$("[data-action=hist-f]").forEach((b) => b.classList.toggle("on", b === el)); $("#hist-body").innerHTML = runRows(filterRuns()); },
     tab: (el) => { S.runTab = el.dataset.t; history.replaceState(null, "", `#/run/${encodeURIComponent(S.run.id)}?tab=${S.runTab}`); $$(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.t === S.runTab)); renderRunBody(); $("#view").scrollTop = 0; },
     print: () => { if (S.runTab !== "report") { S.runTab = "report"; renderRunShell(); } setTimeout(() => window.print(), 200); },
-    "reuse-case": () => { S.w = S.w || loadWizard(); S.w.case = caseFromJSON(S.run.case || {}); S.w.sources=[];S.w.labels=[];S.w.extractionIssues=[];delete S.w.jsonDraft; S.w.jsonError = false; S.w.step = 0; S.w.caseMode = "form"; S.w.useDemoData = false; saveWizard(); location.hash = "#/new"; toast("Case loaded for a new recommendation", "ok"); },
+    "reuse-case": () => { S.w = S.w || loadWizard(); S.w.case = caseFromJSON(S.run.case || {}); S.w.sources=[];S.w.labels=[];S.w.extractionIssues=[];delete S.w.extractedSources;intakeError="";intakeStage="";delete S.w.jsonDraft; S.w.jsonError = false; S.w.step = 0; S.w.caseMode = "form"; S.w.useDemoData = false; saveWizard(); location.hash = "#/new"; toast("Case loaded for a new recommendation", "ok"); },
     decision: (el) => { S.signDecision = el.dataset.d; $$("#decisions .decision").forEach((b) => b.classList.toggle("on", b === el)); },
     sign: async (el) => {
       const reviewer = $("#sign-name").value.trim(), comment = $("#sign-comment").value.trim();
@@ -776,7 +748,7 @@
     "w-step": (el) => { S.w.step = +el.dataset.i; saveWizard(); renderWizard(); },
     "w-prev": () => { S.w.step = Math.max(0, S.w.step - 1); saveWizard(); renderWizard(); },
     "w-next": () => { S.w.step = Math.min(2, S.w.step + 1); saveWizard(); renderWizard(); },
-    "w-reset": () => { if (!confirm("Reset the case, evidence and settings?")) return; S.w = defaultWizard(); S.w.settings = defaultsToSettings(); apiKey = ""; saveWizard(); renderWizard(); },
+    "w-reset": () => { if(intakeBusy)return; if (!confirm("Start a new case? Current draft stays in existing run records.")) return; const llm=S.w.llm, settings=S.w.settings; S.w = defaultWizard(); S.w.llm=llm; S.w.settings=settings||defaultsToSettings(); intakeError="";intakeStage=""; saveWizard(); renderWizard(); },
     "case-mode": (el) => { if (S.w.jsonError && el.dataset.m === "form") return toast("Correct the JSON before switching to the form", "bad"); S.w.caseMode = el.dataset.m; saveWizard(); renderWizard(); },
     "fact-add": () => { S.w.case.facts.push(["", ""]); saveWizard(); renderWizard(); const ins = $$("[data-input=fact-k]"); ins[ins.length - 1]?.focus(); },
     "fact-del": (el) => { S.w.case.facts.splice(+el.dataset.i, 1); if (!S.w.case.facts.length) S.w.case.facts.push(["", ""]); saveWizard(); renderWizard(); },
@@ -787,29 +759,15 @@
       saveWizard(); renderWizard(); $(`[data-input=fact-v][data-i="${i}"]`)?.focus();
     },
     "miss-del": (el) => { S.w.case.missing.splice(+el.dataset.i, 1); saveWizard(); renderWizard(); },
-    "case-demo": async () => { try { const d = await api("/api/demo"); S.w.case = caseFromJSON(d.case); S.w.sources=[];S.w.labels=[];S.w.extractionIssues=[];delete S.w.jsonDraft; S.w.jsonError = false; saveWizard(); renderWizard(); toast("Synthetic case loaded", "ok"); } catch (e) { toast(e.message, "bad"); } },
-    "case-clear": () => { S.w.case = blankCase(); S.w.sources=[];S.w.labels=[];S.w.extractionIssues=[];delete S.w.jsonDraft; S.w.jsonError = false; saveWizard(); renderWizard(); },
-    "ev-demo": async () => { try { const d = await api("/api/demo"); await setEvidence(d.evidence, "Synthetic demo evidence"); } catch (e) { toast(e.message, "bad"); } },
+    "case-clear": () => { S.w.case = blankCase(); S.w.sources=[];S.w.labels=[];S.w.extractionIssues=[];delete S.w.extractedSources;intakeError="";intakeStage="";delete S.w.jsonDraft; S.w.jsonError = false; saveWizard(); renderWizard(); },
     "ev-clear": () => { S.w.knowledgeIds = null; S.w.evidence = null; S.w.evidenceName = ""; S.w.evidenceCheck = null; S.evMap = {}; saveWizard(); renderWizard(); },
-    "w-mode": (el) => { S.w.mode = el.dataset.m; saveWizard(); renderWizard(); },
-    "w-scenario": (el) => { S.w.scenario = el.dataset.s; saveWizard(); $$("[data-action=w-scenario]").forEach((b) => b.classList.toggle("on", b === el)); },
-    start: async (el) => {
-      const w = S.w;
-      if (!startChecks().ok) return toast("Resolve the preflight checks first", "bad");
-      const body = { mode: w.mode, settings: w.settings };
-      if (w.parentRunId) body.parent_run_id = w.parentRunId;
-      if (w.mode === "demo") {
-        body.scenario = w.scenario; body.pace = w.pace;
-        if (!w.useDemoData) { body.case = buildCase(); if (w.evidence) body.evidence = w.evidence; }
-      } else {
-        body.case = buildCase(); body.evidence = w.evidence;
-        body.llm = connection();
-      }
-      if (w.knowledgeIds?.length && (w.mode === "llm" || !w.useDemoData)) body.knowledge_ids = w.knowledgeIds;
-      if (w.mode === "llm" || !w.useDemoData) body.research_labels = w.labels || [];
-      el.disabled = true; el.innerHTML = `<span class="spinner" style="border-color:rgba(255,255,255,.4);border-top-color:#fff"></span>Starting…`;
-      try { const { id } = await api("/api/runs", { body }); location.hash = `#/run/${id}`; }
-      catch (e) { toast(e.message, "bad"); renderWizard(); }
+    "intake-retry": () => runUploadedCase(),
+    start: async () => {
+      if(intakeBusy)return;
+      if(extraCase().source_ids?.length)return runUploadedCase();
+      intakeBusy=true;intakeError="";
+      try{await submitRecommendation();}catch(e){intakeError=e.message;toast(e.message,"bad");}
+      finally{intakeBusy=false;if(location.hash.startsWith("#/new"))renderWizard();}
     },
   };
   async function setEvidence(arr, name) {
@@ -845,12 +803,12 @@
   function libraryRows() {
     const list = K.results === null ? K.documents.filter(d => !K.role || d.roles.includes(K.role)) : K.results;
     if (!list.length) return `<div class="library-empty">${icon(K.q ? "search" : "book")}<h3>${K.q ? "No matching passages" : K.archived ? "No archived documents" : "Your library is ready"}</h3><p>${K.q ? "Try a different term or specialist filter." : K.archived ? "Archived documents appear here." : "Add guidelines, references or local documents."}</p>${!K.q && !K.archived ? `<button class="btn primary" data-action="kb-add">${icon("plus")}Add document</button>` : ""}</div>`;
-    return list.map(d => { const id = d.document_id || d.id; return `<article class="knowledge-item"><div class="knowledge-main">${K.archived ? "" : `<input type="checkbox" aria-label="Select ${esc(d.title)}" data-change="kb-select" data-id="${esc(id)}" ${K.selected.has(id) ? "checked" : ""}>`}<div class="knowledge-content"><div class="row wrap"><button class="text-link" data-action="kb-detail" data-id="${esc(id)}">${esc(d.title)}</button>${d.synthetic ? badge("Synthetic","warn","nodot") : ""}</div><div class="knowledge-meta">${esc(d.source)}<span>Version ${esc(d.version)}</span></div>${d.text ? `<p class="search-excerpt">${esc(d.text.length > 480 ? d.text.slice(0,480)+"…" : d.text)}</p>` : ""}<div class="row wrap" style="margin-top:10px">${d.roles.map(r=>roleTag(r,20)).join("")}<span class="muted small">${d.ordinal ? `Passage ${d.ordinal}` : `Passages: ${d.chunks} · Characters: ${Number(d.characters).toLocaleString()}`}</span></div></div><button class="btn ghost sm" data-action="kb-archive" data-id="${esc(id)}" data-value="${K.archived ? "false" : "true"}" title="${K.archived ? "Restore document" : "Archive document"}">${icon(K.archived ? "refresh" : "folder")}${K.archived ? "Restore" : "Archive"}</button></div></article>`; }).join("");
+    return list.map(d => { const id = d.document_id || d.id; return `<article class="knowledge-item"><div class="knowledge-main"><div class="knowledge-content"><div class="row wrap"><button class="text-link" data-action="kb-detail" data-id="${esc(id)}">${esc(d.title)}</button>${d.synthetic ? badge("Synthetic","warn","nodot") : ""}</div><div class="knowledge-meta">${esc(d.source)}<span>Version ${esc(d.version)}</span></div>${d.text ? `<p class="search-excerpt">${esc(d.text.length > 480 ? d.text.slice(0,480)+"…" : d.text)}</p>` : ""}<div class="row wrap" style="margin-top:10px">${d.roles.map(r=>roleTag(r,20)).join("")}<span class="muted small">${d.ordinal ? `Passage ${d.ordinal}` : `Passages: ${d.chunks} · Characters: ${Number(d.characters).toLocaleString()}`}</span></div></div><button class="btn ghost sm" data-action="kb-archive" data-id="${esc(id)}" data-value="${K.archived ? "false" : "true"}" title="${K.archived ? "Restore document" : "Archive document"}">${icon(K.archived ? "refresh" : "folder")}${K.archived ? "Restore" : "Archive"}</button></div></article>`; }).join("");
   }
   function renderKnowledge() {
     setView(`<div class="page-h"><div><h1 class="h1">Knowledge base</h1><p class="lead">Documents: ${K.stats.documents || 0} · Indexed passages: ${K.stats.chunks || 0}</p></div><button class="btn primary" data-action="kb-add">${icon("plus")}Add document</button></div>
       <section class="card"><div class="knowledge-toolbar"><div class="knowledge-search">${icon("search")}<input class="input" aria-label="Search knowledge base" data-input="kb-q" data-key="kb-search" placeholder="Search guidelines, drugs or clinical terms" value="${esc(K.q)}"><button class="btn primary" data-action="kb-search">Search</button></div><select class="select" aria-label="Specialist filter" data-change="kb-role"><option value="">All specialists</option>${ROLES.map(r=>`<option value="${r}" ${K.role === r ? "selected" : ""}>${r} · ${ROLE[r].short}</option>`).join("")}</select></div>
-      <div class="knowledge-controls"><div class="seg"><button data-action="kb-view" data-mode="active" class="${K.archived ? "" : "on"}">Documents</button><button data-action="kb-view" data-mode="archived" class="${K.archived ? "on" : ""}">Archived</button></div><div class="row"><span id="kb-selected-count" class="muted small">${K.selected.size} selected</span><button class="btn sm" id="kb-use" data-action="kb-use" ${K.selected.size ? "" : "disabled"}>Use for recommendation${icon("chevron")}</button></div></div>
+      <div class="knowledge-controls"><div class="seg"><button data-action="kb-view" data-mode="active" class="${K.archived ? "" : "on"}">Documents</button><button data-action="kb-view" data-mode="archived" class="${K.archived ? "on" : ""}">Archived</button></div><div class="row"><span class="small muted">Used automatically for new recommendations</span></div></div>
       <div id="kb-results">${libraryRows()}</div><div class="knowledge-foot"><span>${icon("database")}Indexed locally</span><span id="kb-result-count">${K.results ? `Matching passages: ${K.results.length}` : "Source documents stored locally"}</span></div></section>`,crumb("Knowledge base"));
   }
   async function searchKnowledge() {
@@ -911,13 +869,7 @@
       try {const out=await api("/api/knowledge",{body:{documents:docs}}); closeDrawer(); K.form=null; K.archived=false; await viewKnowledge(); toast(`${out.created} added · ${out.duplicates} already in library${out.restored ? ` · ${out.restored} restored` : ""}`,"ok");}
       catch(e){el.disabled=false;if($("#kb-form-error")) $("#kb-form-error").textContent=e.message;}
     },
-    "kb-use": async (el) => {
-      el.disabled=true;
-      try { const ids=[...K.selected], data=await api("/api/knowledge/snapshot",{body:{ids}}), checked=await api("/api/validate",{body:{evidence:data.evidence}});
-        if (!checked.evidence?.ok) throw new Error("Selected evidence is invalid");
-        S.w.evidence=data.evidence; S.w.evidenceName=`Knowledge base · Documents: ${ids.length}`; S.w.evidenceCheck=checked.evidence; S.w.knowledgeIds=ids; S.w.useDemoData=false; S.w.step=1; S.w.settings ||= defaultsToSettings(); saveWizard(); location.hash="#/new"; toast("Knowledge documents attached to case","ok");
-      }catch(e){el.disabled=false;toast(e.message,"bad");}
-    }
+
   });
 
   const inputs = {
@@ -937,31 +889,25 @@
         err.textContent = "Valid JSON. Form updated."; err.style.color = "var(--ok)";
       } catch (e) { S.w.jsonError = true; saveWizard(); refreshCaseSide(); err.textContent = `JSON error: ${e.message}`; err.style.color = "var(--bad)"; }
     },
-    pace: (el) => { S.w.pace = +el.value; $("#pace-v").textContent = S.w.pace.toFixed(1); saveWizard(); },
     setting: (el) => { S.w.settings[el.dataset.k] = el.value; saveWizard(); refreshStartChecks(); },
     llm: (el) => { S.w.llm[el.dataset.k] = el.value.trim(); saveWizard(); refreshStartChecks(); },
     "llm-role": (el) => { S.w.llm.role_models = S.w.llm.role_models || {}; S.w.llm.role_models[el.dataset.r] = el.value.trim(); saveWizard(); },
     apikey: (el) => { apiKey = el.value.trim(); refreshStartChecks(); },
   };
   function refreshStartChecks() {
-    const btn = $("[data-action=start]"); if (!btn) return;
-    const { items, ok } = startChecks();
-    const list = btn.previousElementSibling; if (list) list.outerHTML = checkList(items);
-    btn.disabled = !ok;
+    const btn=$("[data-action=start]");if(btn)btn.disabled=intakeBusy;
   }
   const changes = {
     "kb-file": (el) => importKnowledgeFile(el.files[0]),
     "kb-synthetic": (el) => { K.form.synthetic=el.checked; },
     "kb-form-role": (el) => { K.form.roles=el.checked ? [...new Set([...K.form.roles,el.dataset.r])] : K.form.roles.filter(r=>r!==el.dataset.r); },
     "kb-role": (el) => { K.role=el.value; if(K.q.trim()) searchKnowledge(); else renderKnowledge(); },
-    "kb-select": (el) => { if(el.checked) K.selected.add(el.dataset.id); else K.selected.delete(el.dataset.id); $$("[data-change=kb-select]").forEach(input=>input.checked=K.selected.has(input.dataset.id)); $("#kb-selected-count").textContent=`${K.selected.size} selected`; $("#kb-use").disabled=!K.selected.size; },
     "case-file": async (el) => {
       const f = el.files[0]; if (!f) return;
-      try { const o = JSON.parse(await readFile(f)); S.w.case = caseFromJSON(o); S.w.sources=[];S.w.labels=[];S.w.extractionIssues=[];await hydrateCaseSources();delete S.w.jsonDraft; S.w.jsonError = false; S.w.useDemoData = false; saveWizard(); renderWizard(); toast("Case imported", "ok"); }
+      try { const o = JSON.parse(await readFile(f)); S.w.case = caseFromJSON(o); S.w.sources=[];S.w.labels=[];S.w.extractionIssues=[];delete S.w.extractedSources;intakeError="";intakeStage="";await hydrateCaseSources();delete S.w.jsonDraft; S.w.jsonError = false; S.w.useDemoData = false; saveWizard(); renderWizard(); toast("Case imported", "ok"); }
       catch (e) { toast(`Unable to read case: ${e.message}`, "bad"); }
     },
     "evidence-file": (el) => importEvidenceFile(el.files[0]),
-    "use-demo": (el) => { S.w.useDemoData = el.checked; saveWizard(); renderWizard(); },
   };
 
   /* ================= longitudinal workspace ================= */
@@ -1039,7 +985,7 @@
     const validation=await api('/api/validate',{body:{evidence}});
     S.w=defaultWizard();S.w.case=caseFromJSON(fresh.information_followup.case);S.w.parentRunId=d.id;
     S.w.evidence=evidence;S.w.evidenceName='Frozen evidence from '+d.id;S.w.evidenceCheck=validation.evidence;
-    S.w.mode=d.mode==='synthetic_demo'?'demo':'llm';S.w.useDemoData=false;
+    S.w.mode="llm";S.w.useDemoData=false;
     S.w.settings={...defaultsToSettings(),...(d.result?.settings?{max_revisions:d.result.settings.max_revisions,concurrency:d.result.settings.max_concurrency,timeout:d.result.settings.call_timeout,top_k:d.result.settings.top_k}:{})};
     S.w.llm={base_url:d.meta?.base_url||'',model:d.meta?.model||'',api_style:d.meta?.api_style||'responses',role_models:d.meta?.role_models||{}};
     saveWizard();closeDrawer();location.hash='#/new';toast('Add records or generate an updated recommendation. Original report retained.','info');
@@ -1054,17 +1000,18 @@
   function intakeHTML() {
     const e=extraCase(), rows=e.observations || [], sources=(S.w.sources || []).filter(s=>(e.source_ids||[]).includes(s.id));
     const input=(i,k,v,placeholder="")=>`<input class="input" data-input="observation" data-i="${i}" data-k="${k}" value="${esc(v)}" placeholder="${placeholder}">`;
-    return `<section class="card" style="margin-top:20px"><div class="card-h"><h3>${icon("upload")}Source documents & images</h3><label class="btn sm" tabindex="0" role="button">${icon("plus")}Add files<input type="file" accept=".docx,.png,.jpg,.jpeg,.webp,.txt,.md" data-change="source-upload" multiple hidden></label></div>
-      <div class="card-b stack"><p class="muted small" style="margin:0">Word, report screenshots or text · 6 MB per file. Select records available at the decision time. Keep future outcomes and held-out physician plans in Research labels.</p>
+    return `<section class="card" style="margin-top:20px"><div class="card-h"><h3>${icon("upload")}Upload case</h3><label class="btn sm" tabindex="0" role="button">${icon("plus")}Add files<input type="file" accept=".docx,.png,.jpg,.jpeg,.webp,.txt,.md" data-change="source-upload" multiple hidden></label></div>
+      <div class="card-b stack"><p class="muted small" style="margin:0">Word, report screenshots or text · 6 MB per file. Select all files for one case together. Uploading starts model extraction and recommendation generation automatically. Use de-identified records.</p>
       ${sources.map(s=>`<div class="source-row"><div><b>${esc(s.name)}</b><div class="small muted">${esc(s.id)} · ${s.images?.length || (s.mime.startsWith("image/")?1:0)} images</div><div class="source-thumbs">${(s.mime.startsWith("image/")?[s.id]:(s.images||[])).map(id=>`<button class="source-thumb" data-action="source-open" data-id="${esc(id)}" title="View source"><img src="/api/sources/${encodeURIComponent(id)}/image" alt="Uploaded report"></button>`).join("")}</div></div>
-        <div class="stack"><input class="input" aria-label="Source available time" data-input="source-context" data-id="${esc(s.id)}" data-k="available_at" value="${esc(e.source_context?.[s.id]?.available_at)}" placeholder="Source available at (ISO + timezone)"><input class="input" aria-label="Source reviewer" data-input="source-context" data-id="${esc(s.id)}" data-k="reviewer" value="${esc(e.source_context?.[s.id]?.reviewer)}" placeholder="Verified by (whole source fits this decision time)"></div><button class="btn ghost sm" data-action="source-remove" data-id="${esc(s.id)}" title="Detach source">${icon("x")}</button></div>`).join("")}
-      <div class="row wrap"><button class="btn" data-action="source-extract" ${e.source_ids?.length?"":"disabled"}>${icon("sparkles")}Extract with model</button><button class="btn ghost" data-action="obs-add">${icon("plus")}Add sourced observation</button><a class="btn ghost" href="#/settings">Model settings</a></div><span class="hint">After uploading, select Extract with model and verify the results. Uploading alone does not update case facts. Extraction uses your configured model service. Confirm each reading and date before review. Raw CT interpretation is not supported.</span>
+        <details><summary>Optional source dates</summary><div class="stack"><input class="input" aria-label="Source available time" data-input="source-context" data-id="${esc(s.id)}" data-k="available_at" value="${esc(e.source_context?.[s.id]?.available_at)}" placeholder="Source available at (ISO + timezone)"><input class="input" aria-label="Source reviewer" data-input="source-context" data-id="${esc(s.id)}" data-k="reviewer" value="${esc(e.source_context?.[s.id]?.reviewer)}" placeholder="Verified by (whole source fits this decision time)"></div></details><button class="btn ghost sm" data-action="source-remove" data-id="${esc(s.id)}" title="Detach source">${icon("x")}</button></div>`).join("")}
+      <div class="small muted">${rows.length?`${rows.length} extracted observations. Missing information is handled with explicit assumptions.`:"Your configured model will read the uploaded case and retrieve evidence from the knowledge base."}</div>
+      <details><summary style="cursor:pointer">View or correct extracted information (optional)</summary>
       ${S.w.extractionIssues?.length?`<div class="notice warn">${icon("info")}<div>${S.w.extractionIssues.map(esc).join("<br>")}</div></div>`:""}
       <div class="observation-list">${rows.map((o,i)=>`<div class="observation-card"><div class="row"><b>Observation ${i+1}</b><span class="spacer"></span><select class="select" data-change="observation-status" data-i="${i}">${["unverified","confirmed","excluded"].map(s=>`<option value="${s}" ${o.status===s?"selected":""}>${s}</option>`).join("")}</select><button class="btn ghost sm" data-action="obs-remove" data-i="${i}" title="Remove observation">${icon("x")}</button></div>
         <div class="grid g-3"><div class="field"><label>Field</label>${input(i,"key",o.key,"serum_creatinine")}</div><div class="field"><label>Value</label>${input(i,"value",typeof o.value==="object"?JSON.stringify(o.value):o.value,"null if unreadable")}</div><div class="field"><label>Unit</label>${input(i,"unit",o.unit,"umol/L")}</div></div>
         <div class="grid g-2"><div class="field"><label>Clinical date</label>${input(i,"observed_at",o.observed_at,"ISO + timezone")}</div><div class="field"><label>Known by</label>${input(i,"available_at",o.available_at,"ISO + timezone")}</div><div class="field"><label>Source ID</label>${input(i,"source_id",o.source_id,"SRC-…")}</div><div class="field"><label>Location in source</label>${input(i,"location",o.location,"Page / row / image region")}</div></div></div>`).join("")}</div>
-      <div class="row"><button class="btn primary" data-action="clinical-check">${icon("shield")}Check clinical data</button></div><div id="clinical-result"></div></div></section>
-      <section class="card" style="margin-top:20px"><div class="card-h"><h3>${icon("lock")}Research labels</h3><button class="btn sm" data-action="label-add">${icon("plus")}Add label</button></div><div class="card-b"><p class="small muted">Stored separately from model inputs: physician plan, expert audit or outcome.</p>${labelsHTML(S.w.labels || [],true)}</div></section>`;
+      <div class="row"><button class="btn primary" data-action="clinical-check">${icon("shield")}Check clinical data</button></div><div id="clinical-result"></div></details></div></section>
+      <details class="card" style="margin-top:20px"><summary style="padding:16px;cursor:pointer">Research labels (optional)</summary><div class="card-h"><h3>${icon("lock")}Research labels</h3><button class="btn sm" data-action="label-add">${icon("plus")}Add label</button></div><div class="card-b"><p class="small muted">Stored separately from model inputs: physician plan, expert audit or outcome.</p>${labelsHTML(S.w.labels || [],true)}</div></details>`;
   }
   function labelsHTML(labels,editable=false){return labels.length?labels.map((v,i)=>`<div class="memory-entry"><div class="row"><b>${esc(v.kind)}</b><span class="muted small">${esc(v.occurred_at)}</span>${editable?`<button class="btn ghost sm" data-action="label-remove" data-i="${i}">${icon("x")}</button>`:""}</div><p>${esc(v.content)}</p><div class="small muted">${esc(v.source)} · ${esc(v.recorded_by)}</div></div>`).join(""):'<span class="muted small">No labels added.</span>';}
   function showLabelForm(runId="") {
@@ -1084,11 +1031,9 @@
     openDrawer(`<div class="dh"><h3>Add patient record</h3><button class="btn ghost sm" data-action="close-drawer">${icon("x")}</button></div><div class="db stack"><div class="field"><label>Record type</label><select class="select" id="mem-kind"><option value="fact">Clinical fact / measurement</option><option value="preference">Preference / execution constraint</option><option value="clinician_decision">Physician decision</option><option value="actual_treatment">Treatment actually received</option></select></div><div class="field"><label>Topic</label><input class="input" id="mem-topic" placeholder="Medication / renal function / bleeding…"></div><div class="field"><label>Content</label><textarea class="textarea" id="mem-content"></textarea></div><div class="grid g-2"><div class="field"><label>Clinical date</label><input class="input" id="mem-occurred" placeholder="ISO + timezone"></div><div class="field"><label>Known by</label><input class="input" id="mem-available" placeholder="ISO + timezone"></div></div><div class="field"><label>Encounter ID</label><input class="input" id="mem-encounter"></div><div class="field"><label>Source</label><input class="input" id="mem-source"></div><div class="field"><label>Recorded / verified by</label><input class="input" id="mem-actor"></div><div class="field"><label>Corrects record (optional)</label><input class="input" id="mem-supersedes" value="${esc(supersedes)}"></div><span class="small muted">Use the actual historical dates. New entries preserve earlier records.</span><button class="btn primary" data-action="memory-save">Save confirmed record</button></div>`);
   }
   Object.assign(actions, {
-    "case-clinical":async()=>{try{const d=await api("/api/demo/clinical");S.w.case=caseFromJSON(d.case);S.w.sources=[];S.w.labels=[];S.w.extractionIssues=[];S.w.jsonError=false;delete S.w.jsonDraft;S.w.useDemoData=false;saveWizard();renderWizard();toast("Fictitious clinical example loaded","ok");}catch(e){toast(e.message,"bad");}},
     "case-memory":async()=>{try{const p=extraCase().patient||{};const data=await api(`/api/patients/${encodeURIComponent(p.patient_id||"")}/snapshot`,{body:{as_of:p.decision_at,encounter_id:p.encounter_id,task_type:extraCase().task_type||"generate_plan"}});openDrawer(`<div class="dh"><h3>Memory at decision time</h3><button class="btn ghost sm" data-action="close-drawer">${icon("x")}</button></div><div class="db"><pre class="json">${jsonHTML(data)}</pre></div>`);}catch(e){toast(e.message,"bad");}},
     "source-open":el=>openDrawer(`<div class="dh"><h3>Original source</h3><button class="btn ghost sm" data-action="close-drawer">${icon("x")}</button></div><div class="db"><p class="mono small">${esc(el.dataset.id)}</p><img class="source-full" src="/api/sources/${encodeURIComponent(el.dataset.id)}/image" alt="Original source image"></div>`),
     "source-remove":el=>{const id=el.dataset.id,e=extraCase(),src=(S.w.sources||[]).find(s=>s.id===id);e.source_ids=(e.source_ids||[]).filter(i=>i!==id);delete e.source_context?.[id];S.w.sources=(S.w.sources||[]).filter(s=>s.id!==id);e.observations=(e.observations||[]).filter(o=>o.source_id!==id&&!src?.images?.includes(o.source_id));saveWizard();renderWizard();},
-    "source-extract":async el=>{el.disabled=true;el.textContent="Extracting…";try{const data=await api("/api/intake/extract",{body:{source_ids:extraCase().source_ids,llm:connection()}});extraCase().observations=[...(extraCase().observations||[]),...data.output.observations];S.w.extractionIssues=data.output.issues;saveWizard();if(location.hash.startsWith("#/new"))renderWizard();toast("Extraction ready for verification","ok");}catch(e){toast(e.message,"bad");el.disabled=false;el.textContent="Extract with model";}},
     "obs-add":()=>{const e=extraCase();(e.observations||=[]).push({key:"",value:null,unit:"",observed_at:"",available_at:"",source_id:e.source_ids?.[0]||"",location:"",status:"unverified"});saveWizard();renderWizard();},
     "obs-remove":el=>{extraCase().observations.splice(+el.dataset.i,1);saveWizard();renderWizard();},
     "clinical-check":async el=>{el.disabled=true;try{const c=await api("/api/clinical/check",{body:{case:buildCase()}});$("#clinical-result").innerHTML=`<div class="notice ${c.blocking?'warn':'info'}">${icon("shield")}<div>${c.input_blocked?'Verify source records before model review.':c.blocking||c.conditional?'Generate a recommendation with explicit conditions; missing information does not stop drafting.':'Core checks complete; optional missing fields do not stop drafting.'}</div></div>${checkList(c.issues.filter(i=>i.severity!=="optional").map(i=>[i.severity==='blocking'?'warn':'info',i.roles.join('/')+': '+i.message]))}<details class="ev"><summary>Checklist and calculations</summary><pre class="json">${jsonHTML(c)}</pre></details>`;}catch(e){toast(e.message,"bad");}finally{el.disabled=false;}},
@@ -1112,7 +1057,7 @@
     "task-type":el=>{extraCase().task_type=el.value;if(el.value!=="review_plan")delete extraCase().candidate_plan;saveWizard();renderWizard();},
     "observation-status":el=>{extraCase().observations[+el.dataset.i].status=el.value;saveWizard();},
     "api-style":el=>{S.w.llm.api_style=el.value;saveWizard();},
-    "source-upload":async el=>{try{for(const file of el.files){if(file.size>6*1024*1024)throw Error("File exceeds 6 MB");const encoded=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]);r.onerror=reject;r.readAsDataURL(file);});const source=await api("/api/sources",{body:{filename:file.name,content_base64:encoded}});S.w.sources||=[];if(!S.w.sources.some(s=>s.id===source.id))S.w.sources.push(source);const e=extraCase();e.source_ids=[...new Set([...(e.source_ids||[]),source.id])];e.source_context||={};e.source_context[source.id]||={available_at:"",reviewer:""};saveWizard();}renderWizard();toast("Sources uploaded locally","ok");}catch(e){toast(e.message,"bad");}},
+    "source-upload":async el=>{await runUploadedCase([...el.files]);},
   });
 
   document.addEventListener("click", (e) => {

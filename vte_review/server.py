@@ -131,7 +131,7 @@ class App(WorkspaceServices):
         return {
             "version": __version__, "prompt_version": PROMPT_VERSION, "runs_dir": str(self.runs),
             "knowledge": self.knowledge.stats(),
-            "capabilities": ["patient_memory", "source_images", "docx_intake", "tool_calling", "clinical_checks", "research_labels", "conditional_recommendations", "information_followup"],
+            "capabilities": ["patient_memory", "source_images", "docx_intake", "tool_calling", "clinical_checks", "research_labels", "conditional_recommendations", "information_followup", "automatic_intake"],
             "information_fields": [{"field": k, "label": label, "label_zh": ZH_LABELS[k], "roles": list(roles),
                                     "priority": "decision_dependent" if critical else "optional", "allow_absent": k in ABSENT_VALUES}
                                    for k, label, roles, critical in FIELD_SPECS],
@@ -247,7 +247,7 @@ class App(WorkspaceServices):
         if parent_run_id:
             self.run_dir(parent_run_id)
         labels = validate_labels(body.get("research_labels", []))
-        mode = body.get("mode", "demo")
+        mode = body.get("mode", "llm")
         raw = body.get("settings") or {}
         if not isinstance(raw, dict):
             raise ValueError("Settings must be a JSON object")
@@ -266,6 +266,10 @@ class App(WorkspaceServices):
                             int(raw.get("top_k", defaults.top_k)))
         meta = {"source": "gui", "mode": mode, "created_at": now_iso(), "app_version": __version__}
         knowledge_ids = body.get("knowledge_ids")
+        if mode == "llm" and body.get("retrieval") == "automatic":
+            knowledge_ids = [d["id"] for d in self.knowledge.list_documents() if not d["synthetic"]]
+            if not knowledge_ids:
+                raise ValueError("The knowledge base is empty. Add guideline documents in Knowledge base, then retry.")
         frozen = self.knowledge.snapshot(knowledge_ids) if knowledge_ids is not None else None
         if parent_run_id and frozen is None:
             parent = self.run_dir(parent_run_id)
