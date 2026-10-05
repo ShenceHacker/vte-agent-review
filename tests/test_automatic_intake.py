@@ -13,6 +13,7 @@ from vte_review.contracts import ContractError, validate_case
 from vte_review.demo import DemoModel
 from vte_review.providers import ModelReply
 from vte_review.server import App
+from vte_review.intake import validate_extraction
 
 
 def observation(source, key="age_years", value=65, **extra):
@@ -80,6 +81,60 @@ class AutomaticIntakeTests(unittest.TestCase):
         with self.assertRaises(ContractError):
             self.app.start({})
         self.assertFalse(self.app.jobs)
+
+    def test_structured_extraction_notes_preserve_all_fields_without_mutating_reply(self):
+        note = {"field": "creatinine", "message": "Date unavailable", "source_id": self.source,
+                "details": {"alternatives": ["undated", "older result"]}}
+        raw = {"observations": [observation(self.source, value=65, status="confirmed")],
+               "issues": ["Keep this text", note]}
+        result = validate_extraction(raw, {self.source})
+        self.assertEqual(result["issues"][0], "Keep this text")
+        self.assertEqual(json.loads(result["issues"][1]), note)
+        self.assertEqual(result["observations"][0]["status"], "unverified")
+        self.assertEqual(raw["observations"][0]["status"], "confirmed")
+        self.assertIsInstance(raw["issues"][1], dict)
+
+    def test_note_container_variants_and_size_limits(self):
+        for notes, expected in [(None, []), ("Note", ["Note"]), ({"message": "Note"}, ['{"message": "Note"}'])]:
+            with self.subTest(notes=notes):
+                self.assertEqual(validate_extraction({"observations": [], "issues": notes}, set())["issues"], expected)
+        for notes in [["x"] * 101, ["x" * 16001], [float("nan")]]:
+            with self.subTest(notes_type=type(notes)), self.assertRaises(ValueError):
+                validate_extraction({"observations": [], "issues": notes}, set())
+
+    def test_structured_notes_do_not_relax_observation_validation(self):
+        raw = {"observations": [observation("foreign-source")], "issues": [{"message": "note"}]}
+        with self.assertRaisesRegex(ValueError, "observation or source"):
+            validate_extraction(raw, {self.source})
+        raw["observations"] = [observation(self.source, unit={"value": "years"})]
+        with self.assertRaisesRegex(ValueError, "Invalid extraction field"):
+            validate_extraction(raw, {self.source})
+
+    def test_extraction_service_keeps_raw_response_and_normalized_notes(self):
+        source = self.source
+        class StructuredNotesModel(IntakeTestModel):
+            async def extract(self, payload, images):
+                return ModelReply({"observations": [observation(source)],
+                                   "issues": [{"field": "date", "message": "Not recorded"}]}, "test-provider")
+        with patch("vte_review.workspace.configured_model", return_value=(StructuredNotesModel(), {"model": "test-provider"})):
+            result = self.app.extract_sources({"source_ids": [self.source]})
+        saved = json.loads((Path(self.temp.name) / "intakes" / (result["id"] + ".json")).read_text())
+        self.assertIsInstance(saved["raw_output"]["issues"][0], dict)
+        self.assertIsInstance(saved["output"]["issues"][0], str)
+        self.assertEqual(saved["output"]["observations"][0]["value"], 65)
+
+    def test_invalid_observation_response_is_retained_for_diagnosis(self):
+        class BadSourceModel(IntakeTestModel):
+            async def extract(self, payload, images):
+                return ModelReply({"observations": [observation("foreign-source")], "issues": []}, "test-provider")
+        with patch("vte_review.workspace.configured_model", return_value=(BadSourceModel(), {"model": "test-provider"})):
+            with self.assertRaisesRegex(ValueError, "observation or source"):
+                self.app.extract_sources({"source_ids": [self.source]})
+        files = list((Path(self.temp.name) / "intakes").glob("INT-*.json"))
+        saved = json.loads(files[0].read_text())
+        self.assertIn("validation_error", saved)
+        self.assertNotIn("output", saved)
+        self.assertEqual(saved["raw_output"]["observations"][0]["source_id"], "foreign-source")
 
     def test_conflicting_undated_values_are_not_silently_selected(self):
         self.case["observations"].append(observation(self.source, value=72))

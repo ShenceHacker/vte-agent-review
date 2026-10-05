@@ -82,3 +82,13 @@
 - Overview and Quick start contain no Run demo entry; the upload page has no mode selector, manual extraction button or evidence step. Knowledge base remains searchable/editable and is used automatically.
 - Final production instance: localhost:8771, v0.6.0, GPT-5.6 Sol, API credentials available, 4 existing knowledge documents. Existing data remains in runs. No real patient record was submitted to the model during this change.
 - The original service was retained after automatic approval rejected stopping/restarting it without a stated reason. Use 8771 for the final version; browser drafts on different ports are separate.
+
+
+## 2026-10-05 — v0.6.1 extraction-note compatibility
+
+- Reproduced user-visible boundary failure: Extraction issues must be strings. The failed extraction had completed its model response and had not created a recommendation run; this error is not evidence of a gateway timeout.
+- Extraction notes now accept text, structured JSON notes, a single text/object note, or a null empty container. Structured notes are preserved as JSON text with count/size/finite-JSON limits. Clinical observation fields and allowed-source checks remain strict, and observations remain unverified.
+- Raw model output is retained in the private local intake record alongside normalized output. Validation failures retain the raw response plus validation_error for diagnosis. Extraction prompts now explicitly require a plain string array.
+- 123 tests pass, including 5 new regression tests for structured notes, container variants/limits, unchanged observation boundaries, retained raw output, and failed-response diagnosis. No real patient model call was made for this fix.
+- Streaming remains unchanged: the Responses adapter requests stream=true and consumes SSE until response.completed; partial text is not exposed as a validated answer. The browser receives workflow events over SSE, while intake currently waits for its full JSON response. Chat Completions uses a non-streaming request.
+- Final local service is 127.0.0.1:8772 (v0.6.1, prompt 2026-10-05.en.v6). The existing browser draft and source attachment were transferred through the case JSON UI so the physician can retry without uploading the Word file again.

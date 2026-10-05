@@ -9,6 +9,7 @@ import json
 import re
 import zipfile
 import threading
+from copy import deepcopy
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -130,8 +131,30 @@ class SourceStore:
 
 
 def validate_extraction(value: dict, allowed: set[str]) -> dict:
-    if not isinstance(value, dict) or set(value) != {"observations", "issues"} or not isinstance(value["observations"], list) or not isinstance(value["issues"], list):
+    if not isinstance(value, dict) or set(value) != {"observations", "issues"} or not isinstance(value["observations"], list):
         raise ValueError("Extraction must contain observations and issues arrays")
+    value = deepcopy(value)
+    # Issues are explanatory notes, not clinical observations. Preserve structured
+    # notes as JSON text instead of discarding a valid extraction for a display type.
+    notes = value["issues"]
+    if notes is None:
+        notes = []
+    elif isinstance(notes, (str, dict)):
+        notes = [notes]
+    if not isinstance(notes, list) or len(notes) > 100:
+        raise ValueError("Extraction issues must be a list of at most 100 notes")
+    normalized = []
+    for note in notes:
+        try:
+            rendered = note if isinstance(note, str) else json.dumps(note, ensure_ascii=False, allow_nan=False)
+        except (TypeError, ValueError):
+            raise ValueError("Extraction issue is not valid JSON data") from None
+        if len(rendered) > 16000:
+            raise ValueError("Extraction issue exceeds 16000 characters")
+        normalized.append(rendered)
+    if sum(map(len, normalized)) > 64000:
+        raise ValueError("Extraction issues exceed 64000 characters")
+    value["issues"] = normalized
     if len(value["observations"]) > 200 or len(value["issues"]) > 100:
         raise ValueError("Extraction is too large")
     required = {"key", "value", "unit", "observed_at", "available_at", "source_id", "location", "status"}
@@ -143,6 +166,4 @@ def validate_extraction(value: dict, allowed: set[str]) -> dict:
                 raise ValueError("Invalid extraction field")
         # Models cannot self-confirm their reading or fabricate a missing date.
         item["status"] = "unverified"
-    if any(not isinstance(i, str) for i in value["issues"]):
-        raise ValueError("Extraction issues must be strings")
     return value

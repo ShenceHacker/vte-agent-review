@@ -95,12 +95,19 @@ class WorkspaceServices:
             finally:
                 await model.close()
         reply = asyncio.run(extract())
-        output = validate_extraction(reply.data, {s["id"] for s in bundle["sources"]} | set(bundle["image_ids"]))
-        item = {"id": "INT-" + uuid4().hex, "source_ids": body["source_ids"], "output": output,
+        item = {"id": "INT-" + uuid4().hex, "source_ids": body["source_ids"], "raw_output": reply.data,
                 "created_at": datetime.now(timezone.utc).isoformat(), "model": reply.model,
                 "usage": reply.usage, "config": config}
         folder = self.runs / "intakes"
         folder.mkdir(exist_ok=True)
+        try:
+            item["output"] = validate_extraction(reply.data, {s["id"] for s in bundle["sources"]} | set(bundle["image_ids"]))
+        except ValueError as exc:
+            # Private local audit data only; never lose a completed model response
+            # merely because boundary validation failed. Credentials are excluded.
+            item["validation_error"] = str(exc)
+            (folder / (item["id"] + ".json")).write_text(json.dumps(item, ensure_ascii=False, indent=2), encoding="utf-8")
+            raise
         (folder / (item["id"] + ".json")).write_text(json.dumps(item, ensure_ascii=False, indent=2), encoding="utf-8")
         return item
 
