@@ -59,18 +59,37 @@ class Workflow:
             started = time.perf_counter()
             try:
                 invoke = getattr(self.model, "complete_with_tools", None)
-                call = invoke(task, role, deepcopy(payload), session) if invoke else self.model.complete(task, role, deepcopy(payload))
-                reply = await asyncio.wait_for(call, self.settings.call_timeout)
+                usage, requests = {}, 0
+                for attempt in range(2):
+                    call = invoke(task, role, deepcopy(payload), session) if invoke else self.model.complete(task, role, deepcopy(payload))
+                    remaining = max(.001, self.settings.call_timeout - (time.perf_counter() - started))
+                    reply = await asyncio.wait_for(call, remaining)
+                    requests += reply.requests
+                    for k, v in reply.usage.items():
+                        if isinstance(v, (int, float)):
+                            usage[k] = usage.get(k, 0) + v
+                    allowed = {d["id"] for d in payload["evidence"]} | set(session.retrieved)
+                    try:
+                        result = validator(reply.data, allowed)
+                        break
+                    except ContractError as exc:
+                        if attempt:
+                            raise
+                        self.emit("call_repair_requested", task=task, role=role, error=str(exc), output=reply.data)
+                        payload["validation_repair"] = {"error": str(exc), "previous_output": reply.data,
+                                                        "allowed_evidence_ids": sorted(allowed)}
+                        supplied = {d["id"]: d for d in payload["evidence"]}
+                        supplied.update(session.retrieved)
+                        payload["evidence"] = list(supplied.values())
                 self.pool.update(session.retrieved)
                 if role in ROLES:
                     previous = {d["id"]: d for d in self.role_evidence[role]}
                     previous.update(session.retrieved)
                     self.role_evidence[role] = list(previous.values())
                 self.proposals.extend(session.proposals)
-                result = validator(reply.data, {d["id"] for d in payload["evidence"]} | set(session.retrieved))
                 self.emit("call_completed", task=task, role=role, version=self.version,
                           duration_s=round(time.perf_counter() - started, 4), model=reply.model,
-                          usage=reply.usage, requests=reply.requests, output=result)
+                          usage=usage, requests=requests, output=result)
                 return result
             except Exception as exc:
                 # Persist only controlled errors; third-party exceptions may contain credentials.
@@ -89,7 +108,11 @@ class Workflow:
             raise
 
     def retrieve(self, role: str, extra: str = "") -> list[dict]:
-        query = json.dumps(self.case, ensure_ascii=False) + " " + ROLE_NAMES[role] + " " + extra
+        query = ROLE_NAMES[role] + " VTE DVT PE " + self.case["question"] + " " + json.dumps(self.case["facts"], ensure_ascii=False)
+        query += " " + " ".join(str(o["key"]) + ": " + str(o["value"]) + " " + str(o["unit"]) for o in self.case.get("observations", []) if o["status"] != "excluded")
+        if role == "B":
+            query += " medication history drug interactions contraindications route dose renal hepatic CYP P-gp"
+        query += " " + extra
         docs = self.evidence.search(query, role, self.settings.top_k)
         self.pool.update({doc["id"]: doc for doc in docs})
         return docs
@@ -176,6 +199,11 @@ class Workflow:
                 allowed = set(self.case["source_ids"]) | set(bundle["image_ids"])
                 if any(o["source_id"] not in allowed for o in self.case.get("observations", [])):
                     raise ContractError("Observation source is not attached to this case")
+                for event in self.case.get("longitudinal", {}).get("prior_events", []) + self.case.get("longitudinal", {}).get("new_information", []):
+                    scoped = self.sources.get(event["source_id"])
+                    scoped_allowed = {scoped["id"], *scoped["images"]}
+                    if event["text"] != scoped["text"] or any(o["source_id"] not in scoped_allowed for o in event["observations"]):
+                        raise ContractError("Timeline event does not match its scoped source")
             if self.checks:
                 self.emit("clinical_checked", report=self.checks)
             if self.checks.get("input_blocked"):

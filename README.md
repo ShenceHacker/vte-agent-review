@@ -2,7 +2,21 @@
 
 VTE 抗凝决策助手：根据病例生成个体化治疗建议，并支持核查已有处方。内部采用 **ABC 并行初判 → D 汇总 → ABC 并行审核各自部分 → D 定向修改 → 相关专家复核，直到通过或停止。**
 
-这个仓库实现通信与审核循环，包含英文研究工作台、SQLite 知识库与患者记忆、Word/图片资料输入、临床资料检查、真实工具调用和可配置的模型接口。v0.6 默认上传后自动提取、检索和运行，仅使用真实模型；v0.5 已支持根据已有资料给出带假设的建议，以及医生填写资料表、补传文件并生成新版；程序内 `approved` 表示工作流通过，不等于临床验证通过。
+这个仓库实现通信与审核循环，包含英文研究工作台、SQLite 知识库与患者记忆、Word/图片资料输入、临床资料检查、真实工具调用和可配置的模型接口。v0.7 加入分块流式进度、多时间点建议、随访版本与本地向量/关键词混合检索；程序内 `approved` 表示工作流通过，不等于临床验证通过。
+
+### 当前流程（v0.7，2026-10-07）
+
+在 **New recommendation** 上传 Word、截图、文本，或直接粘贴文字，即开始处理。ZIP 中每份 Word 单独建立患者；同时选择的截图按同一患者处理。**Patients → Add follow-up** 将新资料关联到原患者并创建新版本。主产品不显示 Demo、手动提取或证据选择；CLI 的确定性模拟器保留用于调试。
+
+- DOCX 按段落与图片关系拆块：每块最多 3,000 字符、2 张图片，最多并行读取 3 块。每块完成即通过 SSE 更新页面；成功结果落盘缓存，重试只补失败块。同一患者的建议按时间点顺序生成，后面的资料不进入前面的源文件/图片工具范围。
+- 显式日期、入院/出院、术后几周/月等标题形成时间点。重复标题归并，重复相同内容去重；日期缺失保留未知。没有可靠时间分界的材料保留在同一节点，不能将上传时间当作就诊日期。
+- A 负责治疗目标、抗凝获益和疗程；**B 从药物与处方出发，担任临床药师；C 从患者状态及变化出发，识别风险与监测需求**；D 汇总后交回相关角色审核。普通缺项通过假设和备选分支处理。
+- 每个节点输出 D 的完整建议、变化、处理与理由，默认折叠专家分节。历史资料、已记录用药、之前的模型建议分别提供；历史检验不自动成为当前值，模型意见不自动写成已确认事实。旧版保留；输入、模型/提示、配置和证据快照相同的已完成节点可复用。
+- RAG 使用 SQLite FTS5/BM25 加本地多语言 MiniLM 向量（384 维、ONNX CPU 推理），余弦排序与 RRF 融合。中英文可跨语言检索，按角色过滤，整个时间线固定证据快照；新增或变化文本按内容哈希缓存向量。检索轨迹存于各运行的 `retrieval_trace.json`。
+- 安装全部依赖：`python -m pip install -e ".[llm,pdf,images,vector]"`。首次使用向量检索会下载公开模型至忽略目录 `runs/embedding-models`；之后用本地权重。未安装 vector 或显式设 `VTE_VECTOR_ENABLED=0` 时，API 和页面显示关键词检索；已启用的向量索引失败会明确报错，不伪装成功。
+- 新入口在本机为 `http://127.0.0.1:8774/#/new`；双击启动器优先使用 `.venv` 和 Sol。患者数据、模型权重、SQLite 数据库及实际病例均不进入 Git。
+
+实现与论文技术描述见 [技术栈](docs/technical-stack.md)，验证见 [验证记录](docs/verification.md)。以下 v0.6 / v0.5 内容保留作历史说明，以本节为准。
 
 ### 上传即运行（v0.6）
 
@@ -43,10 +57,10 @@ VTE 抗凝决策助手：根据病例生成个体化治疗建议，并支持核�
 本机双击 `启动系统.bat`，或运行：
 
 ```powershell
-python scripts/serve_fe.py --open-browser
+.venv/Scripts/python.exe scripts/serve_fe.py --model gpt-5.6-sol --port 8774 --open-browser
 ```
 
-启动器只读当前用户 `.claude/settings.json` 中既有的 FE 地址和凭据，将连接配置放入本服务进程，不复制密钥或改写原配置。仅接受 `https://api.forceeasyai.com`；使用 Responses API，默认模型 `gpt-6-astra`，可以加 `--model gpt-5.6-sol`，也可在界面中按运行选择。FE 启动配置统一使用 low 推理强度、每个模型响应最多6000输出token、每个Agent会话240秒上限；默认端口8769，实际地址以启动输出为准。没有该配置的电脑仍可使用 `python -m vte_review gui` 并在 Settings 设置自己的接口。
+启动器只读当前用户 `.claude/settings.json` 中既有的 FE 地址和凭据，将连接配置放入本服务进程，不复制密钥或改写原配置。仅接受 `https://api.forceeasyai.com`；使用 Responses API，脚本未传参时默认模型 `gpt-6-astra`；本机启动器显式使用 `gpt-5.6-sol` 和端口 8774，也可在 Settings 修改模型。FE 启动配置统一使用 low 推理强度、每个模型响应最多6000输出token、每个Agent会话240秒上限；默认端口8769，实际地址以启动输出为准。没有该配置的电脑仍可使用 `python -m vte_review gui` 并在 Settings 设置自己的接口。
 
 界面的 **New recommendation** 默认生成治疗建议；**Review an existing prescription** 用于核查已有方案。内部 Specialist review 和定向修订机制保持不变。Python包、命令及GitHub仓库的技术标识继续使用 `vte_review` / `vte-review` / `vte-agent-review`，以保持已有命令与链接兼容。
 
@@ -82,7 +96,7 @@ python -m vte_review gui --no-browser
 PDF 文本提取和模型连接为可选依赖（本机已安装）：
 
 ```powershell
-python -m pip install -e ".[llm,pdf,images]"
+python -m pip install -e ".[llm,pdf,images,vector]"
 ```
 
 从 **Knowledge base → Add document** 导入文件或粘贴正文，填写标题、来源、版本和适用角色后保存。检索并勾选资料，点击 **Use for recommendation** 即可接入病例决策。PDF 支持带文本层的文件；扫描件需先做 OCR。界面单文件上限 5 MB，PDF 最多 300 页，正文最多 200 万字符；JSON 使用下文证据数组格式。

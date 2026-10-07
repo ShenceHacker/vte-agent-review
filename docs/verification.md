@@ -1,5 +1,18 @@
 # 验证记录
 
+## 2026-10-07 — v0.7 longitudinal intake and hybrid retrieval
+
+- Final automated check: 140 unittest tests pass; JavaScript syntax and Git whitespace checks pass. Regression coverage also ensures a coordinator draft is retained and marked incomplete when its review fails.
+
+- Previous upload/format fixes were fast-forwarded into local main before this implementation. The new product flow uploads or pastes a case directly, separates Word files by patient, streams extraction-block and visit progress, and presents the coordinator answer. Demo HTTP endpoints are disabled in the product; CLI/debug fixtures remain available explicitly.
+- Automated coverage includes DOCX relationship ordering, table rows, image/timepoint isolation, bounded block size, repeated visits, history preambles, archive handling, parallel extraction, per-block retry, restart recovery, follow-up version reuse, patient separation, historical labs versus current values, model-suggestion provenance, and credential exclusion from saved records.
+- Hybrid retrieval tests use controlled semantic vectors for ranking/cache invariants: Chinese query without keyword overlap, role filtering, immutable returned evidence, persistent content deduplication, modified-text reindexing, archive/snapshot boundaries, and explicit embedding failures. These fixture tests do not claim neural retrieval quality.
+- A separate real FastEmbed/ONNX run loaded multilingual MiniLM and indexed all 386 existing local knowledge passages. Two Chinese queries returned English source passages; the local vector cache held 388 document/query embeddings after the smoke test. First indexing plus both queries took 26.48 seconds on this workstation; this is not a latency benchmark or a clinical retrieval-quality evaluation.
+- The ten new Word files were checked locally for section planning: 4, 5, 4, 5, 3, 4, 4, 4, 4, 4 timepoints. The duplicate follow-up heading in one file is merged; each source's embedded images remain linked to the correct section. These original patient files were not submitted to FE or committed to Git.
+- Browser testing verified the English upload page, automatic transition to the patient timeline, partial block progress before final output, and the Retry control. The live test uses a wholly synthetic two-visit case with GPT-5.6 Sol, not any of the original patient cases. A first live C assessment returned an unknown citation identifier; strict validation rejected it. The workflow now offers one scoped structural/citation repair within the original call time budget, then applies the same validation again. Invalid citations are never silently accepted; regression tests cover correction and persistent rejection.
+- Current parameters and distinctions between block/event streaming, local embeddings and remote clinical model inference are documented in technical-stack.md. Private QA files and model outputs remain under ignored runs/.
+- Final live outcome: both dates in the synthetic Sol case reached `conditional` with specialist review complete. A second-visit attempt hit the 240-second call timeout; retry reused the first completed recommendation and all three extraction blocks, then completed the second visit. Browser knowledge search using a Chinese renal/dosing query and the B filter returned English label/guideline passages. No live result is described as a clinical validation or a latency guarantee. Test cases/runs are copied to `runs/qa-v07/`; originals remain intact with a software_test purpose tag and are hidden from product lists.
+
 ## 2026-10-04：英文页面与双语流程图
 
 - 按用户要求将 v0.5 新增资料表、条件性建议标题、按钮、占位符、上传说明和提示统一为英文；移除重复中文字段标签。临床事实与既有模型回复保持原文，未重跑模型或代填医生确认。

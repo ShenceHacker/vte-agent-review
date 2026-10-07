@@ -18,7 +18,7 @@ from tests.test_clinical_workspace import AT, EARLIER, case, entry, png
 class WorkspaceServerTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory()
-        self.server=make_server(port=0,runs_dir=self.temp.name)
+        self.server=make_server(port=0,runs_dir=self.temp.name,allow_debug=True)
         self.thread=threading.Thread(target=self.server.serve_forever,daemon=True);self.thread.start()
         self.base=f"http://127.0.0.1:{self.server.server_port}"
     def tearDown(self):

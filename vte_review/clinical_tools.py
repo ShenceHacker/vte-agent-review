@@ -15,7 +15,7 @@ def schema(name, description, properties=None, required=None):
 STR = {"type": "string"}
 NUM = {"type": "number"}
 TOOLS = [
-    schema("read_patient_memory", "Read this patient's confirmed historical context at the frozen decision time. Does not include labels or future events.", {"topic": STR}),
+    schema("read_patient_memory", "Read confirmed memory and separately labeled time-scoped extracted history and prior model suggestions. No later visits or research labels. Model suggestions are not patient facts.", {"topic": STR}),
     schema("check_clinical_data", "Read the clinical checklist, calculations, missing fields and conflicting source records."),
     schema("search_evidence", "Retrieve additional evidence from this run's fixed evidence corpus. Cite returned evidence IDs.", {"query": STR}),
     schema("calculate_crcl", "B: calculate Cockcroft-Gault from the verified current case fields, never invent or substitute inputs."),
@@ -82,7 +82,8 @@ class ClinicalTools:
             topic = args["topic"].lower().strip()
             items = [e for e in self.memory.get("entries", []) if (self.role == "D" or self.role in e["roles"])
                      and (not topic or topic in (e["topic"] + " " + e["content"]).lower())]
-            return {"patient_id": self.memory.get("patient_id"), "as_of": self.memory.get("as_of"), "entries": items,
+            return {"patient_id": self.memory.get("patient_id") or self.case.get("longitudinal", {}).get("patient_id"), "as_of": self.memory.get("as_of"), "entries": items,
+                    "longitudinal_context": deepcopy(self.case.get("longitudinal")),
                     "snapshot_sha256": self.memory.get("sha256"), "note": "Historical context, not automatically the current regimen or current lab values"}
         if name == "check_clinical_data":
             result = clinical_check(self.case)

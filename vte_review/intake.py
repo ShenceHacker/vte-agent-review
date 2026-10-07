@@ -24,12 +24,12 @@ class SourceStore:
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
 
-    def _save(self, name: str, data: bytes, mime: str, text: str = "", images=None) -> dict:
+    def _save(self, name: str, data: bytes, mime: str, text: str = "", images=None, blocks=None) -> dict:
         source_id = "SRC-" + hashlib.sha256(mime.encode() + b"\0" + data).hexdigest()[:32]
         folder = self.root / source_id
         folder.mkdir(exist_ok=True)
         item = {"id": source_id, "name": name[:180], "mime": mime, "size": len(data),
-                "sha256": hashlib.sha256(data).hexdigest(), "text": text, "images": images or []}
+                "sha256": hashlib.sha256(data).hexdigest(), "text": text, "images": images or [], "blocks": blocks or []}
         # Content address makes the stored source immutable and deduplicated.
         with STORE_LOCK:
             if (folder / "meta.json").exists():
@@ -54,6 +54,67 @@ class SourceStore:
             raise ValueError("This source is not an image")
         raw = (self.root / source_id / "source.bin").read_bytes()
         return {"source_id": source_id, "data_url": "data:" + item["mime"] + ";base64," + base64.b64encode(raw).decode()}
+
+    def ordered_blocks(self, source_id: str) -> list[dict]:
+        """Read document order and image relationships, including older stored DOCX files."""
+        item = self.get(source_id)
+        if item.get("blocks"):
+            return item["blocks"]
+        if "wordprocessingml" not in item["mime"]:
+            if item["mime"].startswith("image/"):
+                return [{"text": "", "images": [source_id], "location": "image"}]
+            return [{"text": line, "images": [], "location": f"line {i+1}"}
+                    for i, line in enumerate(item["text"].splitlines()) if line.strip()]
+        raw = (self.root / source_id / "source.bin").read_bytes()
+        ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+              "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+              "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+              "v": "urn:schemas-microsoft-com:vml"}
+        with zipfile.ZipFile(io.BytesIO(raw)) as z:
+            rels = ET.fromstring(z.read("word/_rels/document.xml.rels")) if "word/_rels/document.xml.rels" in z.namelist() else []
+            links = {}
+            import posixpath
+            for rel in rels:
+                target = rel.get("Target", "")
+                target = posixpath.normpath(target.lstrip("/") if target.startswith("/") else posixpath.join("word", target))
+                if rel.get("TargetMode") != "External" and target.startswith("word/media/") and target in z.namelist():
+                    links[rel.get("Id")] = self._image(Path(target).name, z.read(target))["id"]
+            root = ET.fromstring(z.read("word/document.xml"))
+            blocks = []
+            def append_block(p, location, row=False):
+                text = " | ".join(" ".join(t.text or "" for t in cell.findall(".//w:t", ns)) for cell in p.findall("w:tc", ns)) if row else "".join(t.text or "" for t in p.findall(".//w:t", ns))
+                ids = [links.get(e.get("{" + ns["r"] + "}" + attr))
+                       for tag, attr in ((".//a:blip", "embed"), (".//v:imagedata", "id")) for e in p.findall(tag, ns)]
+                ids = list(dict.fromkeys(x for x in ids if x))
+                if text.strip() or ids:
+                    blocks.append({"text": text, "images": ids, "location": location})
+            def walk(element):
+                for child in element:
+                    if child.tag == "{" + ns["w"] + "}p":
+                        append_block(child, f"paragraph {len(blocks)+1}")
+                    elif child.tag == "{" + ns["w"] + "}tbl":
+                        for row in child.findall("w:tr", ns):
+                            append_block(row, f"table row {len(blocks)+1}", row=True)
+                    else:
+                        walk(child)
+            walk(root)
+            return blocks
+
+    def ingest_archive(self, name: str, encoded: str) -> list[dict]:
+        """Read DOCX members in memory; archive paths never become filesystem paths."""
+        if not str(name).lower().endswith(".zip") or len(encoded) > 32 * 1024 * 1024:
+            raise ValueError("Upload a ZIP smaller than 24 MB")
+        try:
+            raw = base64.b64decode(encoded, validate=True)
+            with zipfile.ZipFile(io.BytesIO(raw)) as z:
+                members = [m for m in z.infolist() if not m.is_dir()]
+                if not 1 <= len(members) <= 50 or sum(m.file_size for m in members) > 48 * 1024 * 1024:
+                    raise ValueError("ZIP must contain 1–50 Word files, at most 48 MB expanded")
+                if any(not m.filename.lower().endswith(".docx") or m.file_size > MAX_FILE for m in members):
+                    raise ValueError("Each ZIP member must be a DOCX smaller than 6 MB")
+                return [self.ingest(Path(m.filename).name, base64.b64encode(z.read(m)).decode()) for m in members]
+        except (zipfile.BadZipFile, binascii.Error):
+            raise ValueError("Invalid ZIP file") from None
 
     def ingest(self, name: str, encoded: str) -> dict:
         if not isinstance(name, str) or not isinstance(encoded, str) or len(encoded) > MAX_FILE * 1.4:
@@ -119,14 +180,14 @@ class SourceStore:
         return self._save(name, raw, mime)
 
     def bundle(self, source_ids: list[str]) -> dict:
-        if not isinstance(source_ids, list) or not source_ids or len(source_ids) > 12:
-            raise ValueError("Select 1–12 source files")
+        if not isinstance(source_ids, list) or not source_ids or len(source_ids) > 120:
+            raise ValueError("Select 1–120 scoped sources")
         sources = [self.get(i) for i in dict.fromkeys(source_ids)]
         if sum(s["size"] for s in sources) > MAX_TOTAL:
             raise ValueError("Selected sources exceed 24 MB")
         image_ids = list(dict.fromkeys(i for s in sources for i in ([s["id"]] if s["mime"].startswith("image/") else s["images"])))
-        if len(image_ids) > 12:
-            raise ValueError("Select at most 12 images per extraction")
+        if len(image_ids) > 120:
+            raise ValueError("Select at most 120 images per patient")
         return {"sources": sources, "image_ids": image_ids}
 
 

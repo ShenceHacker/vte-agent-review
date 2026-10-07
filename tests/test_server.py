@@ -20,7 +20,7 @@ class ServerTests(unittest.TestCase):
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.runs_dir = Path(cls.temp_dir.name) / "runs"
         cls.runs_dir.mkdir(parents=True, exist_ok=True)
-        cls.server = make_server(host="127.0.0.1", port=0, runs_dir=cls.runs_dir)
+        cls.server = make_server(host="127.0.0.1", port=0, runs_dir=cls.runs_dir, allow_debug=True)
         cls.port = cls.server.server_address[1]
         cls.base_url = f"http://127.0.0.1:{cls.port}"
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)

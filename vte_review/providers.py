@@ -73,7 +73,7 @@ class ChatCompletionsModel:
         return await self._dialog(task, role, payload, session=session)
 
     async def extract(self, payload: dict, images: list[dict]) -> ModelReply:
-        return await self._dialog("extract", "D", payload, images=images)
+        return await self._dialog("extract_timeline" if payload.get("timeline_intake") else "extract", "D", payload, images=images)
 
     def _user(self, text: str, images=None):
         if self.api_style == "responses":

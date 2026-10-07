@@ -49,11 +49,12 @@
 
   const ROLE = {
     A: { name: "Anticoagulation benefit & duration", short: "Anticoagulation" },
-    B: { name: "Drug eligibility & safety", short: "Medication safety" },
-    C: { name: "Bleeding risk & patient constraints", short: "Bleeding risk" },
+    B: { name: "Clinical pharmacy & prescription safety", short: "Clinical pharmacist" },
+    C: { name: "Patient status, changes & monitoring", short: "Patient status" },
     D: { name: "Synthesis & targeted revision", short: "Coordinator" },
   };
   const STATUS = {
+    queued: {t:"Queued",c:"gray"}, extracting: {t:"Reading records",c:"run"}, reviewing: {t:"Reviewing",c:"run"}, complete: {t:"Completed",c:"ok"}, review_required: {t:"Review required",c:"warn"},
     approved: { t: "Approved", c: "ok" }, conditional: { t: "Conditional recommendation", c: "info" }, needs_human_review: { t: "Needs human review", c: "warn" },
     failed: { t: "Failed", c: "bad" }, running: { t: "Running", c: "run" }, interrupted: { t: "Interrupted", c: "gray" },
   };
@@ -324,7 +325,7 @@
   const checkList = (items) => `<div class="check-list">${items.map(([s, t]) => `<div class="check-item ${s}">${icon(s === "ok" ? "check" : s === "bad" ? "x" : s === "warn" ? "alert" : "info")}<span>${esc(t)}</span></div>`).join("")}</div>`;
   function defaultsToSettings() { const d = S.info?.defaults || { max_revisions: 3, max_concurrency: 3, call_timeout: 60, top_k: 4 }; return { max_revisions: d.max_revisions, concurrency: d.max_concurrency, timeout: d.call_timeout, top_k: d.top_k }; }
 
-  async function viewNew() { S.w = S.w || loadWizard(); if (!S.w.settings) S.w.settings = defaultsToSettings(); S.evMap = Object.fromEntries((S.w.evidence || []).map((d) => [d.id, d])); await hydrateCaseSources(); if(location.hash.startsWith("#/new"))renderWizard(); }
+  async function viewNew() { S.w = S.w || loadWizard(); if (!S.w.settings) S.w.settings = defaultsToSettings(); renderTimelineUpload(); }
   async function hydrateCaseSources(){const c=S.w.case;const ids=c.extra?.source_ids||[];const records=await Promise.all(ids.map(async id=>{try{return await api(`/api/sources/${encodeURIComponent(id)}`);}catch{return {id,name:id+" (source unavailable)",mime:"text/plain",images:[]};}}));if(c===S.w.case)S.w.sources=records;}
   let intakeBusy = false, intakeStage = "", intakeError = "";
   function renderWizard() {
@@ -436,6 +437,92 @@
     finally{intakeBusy=false;if(location.hash.startsWith("#/new"))renderWizard();}
   }
 
+  /* ================= incremental patient timelines ================= */
+  const intakeQueue = [];
+  let uploadBusy = false;
+  const encodingOf = file => new Promise((resolve,reject) => {const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]);r.onerror=()=>reject(Error("Unable to read file"));r.readAsDataURL(file);});
+  const seriesOptions = () => ({llm:connection(), settings:S.w.settings || defaultsToSettings()});
+  const parentTimeline = () => new URLSearchParams(location.hash.split('?')[1] || '').get('parent');
+  function renderTimelineUpload() {
+    const parent=parentTimeline(), env=S.info?.env || {}, retrieval=S.info?.retrieval;
+    setView(`<div class="page-h"><div><h1 class="h1">${parent ? 'Add a follow-up' : 'New recommendation'}</h1><p class="lead">Upload the record. Receive recommendations for each point in the patient's timeline.</p></div><a class="btn" href="#/patients">${icon('users')}Patient timelines</a></div>
+      <div class="row wrap" style="margin-bottom:20px"><span class="chip">${icon('cpu')}${esc(S.w.llm.model || env.model || 'Configure model in Settings')}</span><span class="chip">${icon('database')}${retrieval?.enabled && retrieval?.available ? 'Semantic + keyword retrieval' : 'Keyword retrieval'}</span><a class="btn ghost sm" href="#/settings">Settings</a></div>
+      ${parent ? `<div class="notice info">${icon('git')}A new version will include the earlier history. Unchanged timepoints are reused when their inputs and configuration match.</div>` : ''}
+      <section class="card"><div class="card-b"><label class="dropzone timeline-drop" tabindex="0" role="button">${icon('upload')}<h3>${uploadBusy ? 'Saving uploaded records…' : 'Choose files or drop them here'}</h3><p>Word, screenshots, text or a ZIP of Word records</p><span class="muted small">One patient per Word file. Screenshots selected together belong to one patient.</span><input type="file" data-change="timeline-files" accept=".docx,.txt,.md,.png,.jpg,.jpeg,.webp,.zip" multiple ${uploadBusy?'disabled':''} hidden></label>
+      <div class="field" style="margin-top:24px"><label for="timeline-text">Or paste a case</label><textarea id="timeline-text" class="textarea" placeholder="History…\nAdmission: findings and medicines…\nDischarge: findings and medicines…\nFollow-up (date): findings and medicines…"></textarea></div>
+      <div class="row" style="margin-top:16px"><span class="muted small">Use de-identified records.</span><span class="spacer"></span><button class="btn primary" data-action="timeline-text" ${uploadBusy?'disabled':''}>${icon('play')}Generate recommendations</button></div></div></section>
+      <div id="upload-queue" class="stack" style="margin-top:24px">${intakeQueue.map((q,i)=>`<div class="card card-b"><div class="row wrap"><b>${esc(q.label)}</b><span class="spacer"></span>${q.id?`<a class="btn primary sm" href="#/series/${q.id}">Open timeline ${icon('chevron')}</a>`:q.error?`<button class="btn sm" data-action="timeline-start-retry" data-i="${i}">Retry</button>`:'<span class="spinner"></span>'}</div><p class="muted small">${esc(q.error || (q.id?'Reading sections and preparing recommendations in the background.':'Starting…'))}</p></div>`).join('')}</div>`, crumb(parent?'Follow-up':'New recommendation'));
+  }
+  async function startTimelineItem(q) {
+    q.error='';
+    try { const result=await api('/api/series',{body:{source_ids:q.ids,parent_id:q.parent,...seriesOptions()}});q.id=result.id; }
+    catch(e){q.error=e.message;}
+  }
+  async function uploadTimelines(files) {
+    if(uploadBusy)return;
+    const parent=parentTimeline(), selected=[...files];
+    if(!selected.length)return;
+    if(parent && selected.some(f=>f.name.toLowerCase().endsWith('.zip')))return toast('Add follow-up files for this patient individually. ZIP imports start separate patients.','bad');
+    uploadBusy=true;renderTimelineUpload();
+    const groups=[], loose=[];
+    try {
+      // Check all file sizes before uploading any part of this batch.
+      for(const f of selected)if(f.size>(f.name.toLowerCase().endsWith('.zip')?24:6)*1024*1024)throw Error('Files must be at most 6 MB; ZIP archives at most 24 MB.');
+      for(const file of selected){
+        const zip=file.name.toLowerCase().endsWith('.zip');
+        const data=await api(zip?'/api/sources/archive':'/api/sources',{body:{filename:file.name,content_base64:await encodingOf(file)}});
+        if(zip){for(const src of data.sources)groups.push({ids:[src.id],label:src.name});}
+        else if(parent || data.mime.startsWith('image/'))loose.push(data);
+        else groups.push({ids:[data.id],label:file.name});
+      }
+      if(loose.length && !parent && groups.length===1)groups[0].ids.push(...loose.map(s=>s.id));
+      else if(loose.length)groups.push({ids:loose.map(s=>s.id),label:parent?'New follow-up':`${loose.length} patient screenshots`});
+      for(const group of groups){const q={...group,parent};intakeQueue.push(q);renderTimelineUpload();await startTimelineItem(q);}
+      if(groups.length===1 && intakeQueue.at(-1)?.id)location.hash=`#/series/${intakeQueue.at(-1).id}`;
+    }catch(e){toast(e.message,'bad');}
+    finally{uploadBusy=false;if(location.hash.startsWith('#/new'))renderTimelineUpload();}
+  }
+  async function viewTimelines(){
+    const version=routeVersion;setView(loading(),crumb('Patient timelines'));
+    try{
+      const {series}=await api('/api/series');if(version!==routeVersion)return;
+      setView(`<div class="page-h"><div><h1 class="h1">Patient timelines</h1><p class="lead">History, follow-up versions and recommendations at each timepoint.</p></div><a class="btn primary" href="#/new">${icon('plus')}Upload a case</a></div>
+        <div class="timeline-grid">${series.map(s=>`<a class="card timeline-patient" href="#/series/${s.id}"><div class="row">${icon('users')}<b>${esc(s.label || s.patient_id)}</b><span class="spacer"></span>${statusBadge(s.status)}</div><p>${s.completed_nodes} / ${s.node_count} timepoints ready</p><div class="muted small">${esc(s.patient_id)} · ${fmtTime(s.created_at)}${s.parent_id?' · Follow-up version':''}</div></a>`).join('')||'<div class="card card-b muted">Upload a case to start its timeline.</div>'}</div><a class="btn ghost" style="margin-top:24px" href="#/memory">Clinician-confirmed memory records</a>`,crumb('Patient timelines'));
+    }catch(e){if(version===routeVersion)setView(`<div class="notice warn">${esc(e.message)}</div>`,crumb('Patient timelines'));}
+  }
+  function timelineContent(item){
+    const chunks=item.nodes.flatMap(n=>n.chunks), read=chunks.filter(c=>c.status==='complete').length;
+    return `<div class="card card-b timeline-progress"><div class="row wrap"><b>${read} / ${chunks.length} sections read</b><span class="spacer"></span><span>${item.completed_nodes} / ${item.node_count} recommendations ready</span>${statusBadge(item.status)}</div><progress max="${chunks.length||1}" value="${read}"></progress><p class="muted small">Sections are read in parallel. Recommendations follow the patient's timeline.</p></div>
+      ${item.error?`<div class="notice warn" style="margin-top:20px"><div>${esc(item.error)}</div></div>`:''}
+      ${['failed','interrupted'].includes(item.status)?`<div style="margin-top:16px"><button class="btn primary" data-action="timeline-retry" data-id="${item.id}">${icon('refresh')}Retry unfinished work</button></div>`:''}
+      <div class="clinical-timeline">${item.nodes.map((n,i)=>{const d=n.recommendation;return `<article class="timeline-node"><div class="timeline-dot">${i+1}</div><section class="card"><div class="card-h"><h3>${esc(n.label)}</h3><div class="row wrap">${n.reused?badge('Reused','gray'):''}${statusBadge(n.review_status || n.status || (n.chunks.every(c=>c.status==='complete')?'Waiting for earlier visit':'Reading records'))}</div></div><div class="card-b">
+        ${d?`${n.draft_unreviewed?'<div class="notice warn">Latest draft retained. Specialist review is incomplete; retry to continue.</div>':''}<div class="plan"><div class="plan-label">${icon('target')}COORDINATOR RECOMMENDATION</div><div class="plan-text">${esc(d.shared_plan)}</div></div>${assumptionsHTML(d)}`:`<p class="muted">${n.chunks.filter(c=>c.status==='complete').length} / ${n.chunks.length} sections ready.${n.status==='reviewing'?' Specialists are assessing and reviewing this timepoint.':''}</p>`}
+        <details class="timeline-records"><summary>Records available at this timepoint</summary><p class="muted small">Extracted records remain distinct from model recommendations.</p>${n.chunks.map(c=>`<div class="timeline-source"><span class="chip">${esc(c.status)}${c.cache_hit?' · cached':''}</span>${c.error?`<p>${esc(c.error)}</p>`:''}${c.output?`<ul>${c.output.observations.map(o=>`<li><b>${esc(o.key)}</b>: ${esc(fmtVal(o.value))} ${esc(o.unit)}</li>`).join('')}</ul>`:''}</div>`).join('')}</details>
+        ${n.run_id?`<a class="btn ghost sm" style="margin-top:16px" href="#/run/${n.run_id}?tab=report">${icon('file')}Report, evidence & physician sign-off</a>`:''}</div></section></article>`;}).join('')}</div>`;
+  }
+  async function viewSeries(id){
+    const version=routeVersion;let source=null,timer=null,pending=false,again=false;
+    setView(loading(),crumb('Patient timeline'));
+    cleanup.push(()=>{source?.close();clearTimeout(timer);});
+    async function refresh(first=false){
+      if(pending){again=true;return;}pending=true;
+      try{
+        const item=await api(`/api/series/${encodeURIComponent(id)}`);if(version!==routeVersion)return;
+        if(first)setView(`<div class="page-h"><div><a class="btn ghost sm" href="#/patients">${icon('arrowLeft')}Patient timelines</a><h1 class="h1">${esc(item.patient_id)}</h1><p class="muted">${fmtTime(item.created_at)}${item.parent_id?` · <a href="#/series/${item.parent_id}">Previous version</a>`:''}</p></div><a class="btn primary" href="#/new?parent=${id}">${icon('plus')}Add follow-up</a></div><div id="timeline-content"></div>`,crumb('Patient timeline',item.patient_id));
+        const open=[...document.querySelectorAll('.timeline-records')].map(d=>d.open);
+        const el=$('#timeline-content');if(el){el.innerHTML=timelineContent(item);$$('.timeline-records').forEach((d,i)=>d.open=!!open[i]);}
+        if(['complete','failed','interrupted'].includes(item.status)){source?.close();source=null;}
+      }catch(e){if(version===routeVersion)toast(e.message,'bad');}
+      finally{pending=false;if(again){again=false;schedule();}}
+    }
+    function schedule(){clearTimeout(timer);timer=setTimeout(()=>refresh(),350);}
+    await refresh(true);if(version!==routeVersion)return;
+    source=new EventSource(`/api/series/${encodeURIComponent(id)}/stream`);
+    source.onmessage=schedule;
+    source.addEventListener('done',()=>{source?.close();source=null;schedule();});
+    source.onerror=()=>{schedule();};
+  }
+
   /* ================= run detail ================= */
   async function viewRun(id, tab) {
     const route = routeVersion;
@@ -459,7 +546,7 @@
         <h1 class="q">${esc(d.case?.question || "")}</h1>
         <div class="muted small">Case ${esc(d.case_id)} · Created ${fmtTime(d.created_at)}</div></div>
       <div class="row no-print">
-        <button class="btn" data-action="reuse-case" title="Generate another recommendation with this case">${icon("refresh")}Reuse case</button>
+        <button class="btn" data-action="reuse-case" title="Generate another recommendation with this case">${icon("refresh")}Generate again</button>
         ${done ? `<a class="btn" href="/api/runs/${encodeURIComponent(d.id)}/report.md">${icon("download")}Report .md</a><a class="btn" href="/api/runs/${encodeURIComponent(d.id)}/result.json">${icon("code")}Data .json</a>` : ""}
         <button class="btn primary" data-action="print" ${done ? "" : "disabled"}>${icon("printer")}Print / PDF</button></div></div>
       <div class="tabs">${tabs.map(([k, ic, t]) => `<button class="${S.runTab === k ? "on" : ""}" data-action="tab" data-t="${k}">${icon(ic)}${t}</button>`).join("")}</div>
@@ -614,7 +701,7 @@
         <div class="verdict-kpis"><div><b>v${r.version}</b><span>Draft version</span></div><div><b>${r.revisions}</b><span>D revisions</span></div><div><b>${m.calls ?? "—"}</b><span>Agent sessions</span></div><div><b>${fmtSec(m.elapsed_s)}</b><span>Elapsed time</span></div></div></div>
       ${r.mode === "synthetic_demo" ? `<div class="notice warn">${icon("flask")}<div><b>Synthetic demo</b> · Workflow illustration only.</div></div>` : ""}
       ${informationSummaryHTML(d)}
-      ${draft ? `<div class="plan"><div class="plan-label">${icon("target")}COORDINATED RECOMMENDATION <span class="recommendation-model">${esc(d.meta?.role_models?.D || d.meta?.model || "")}</span></div><div class="plan-text">${esc(draft.shared_plan)}</div></div>${assumptionsHTML(draft)}${sections}` : ""}
+      ${draft ? `<div class="plan"><div class="plan-label">${icon("target")}COORDINATED RECOMMENDATION <span class="recommendation-model">${esc(d.meta?.role_models?.D || d.meta?.model || "")}</span></div><div class="plan-text">${esc(draft.shared_plan)}</div></div>${assumptionsHTML(draft)}<details class="card"><summary style="padding:20px;cursor:pointer">Specialist review details</summary>${sections}</details>` : ""}
       <div class="card"><div class="card-h"><h3>${icon("user")}Case summary</h3><span class="chip mono">${esc(c.case_id)}</span></div><div class="card-b">
         <div style="font-weight:600;margin-bottom:10px">${esc(c.question)}</div>
         <dl class="facts">${facts.map(([k, val]) => `<dt>${esc(k)}</dt><dd>${esc(fmtVal(val))}</dd>`).join("")}</dl>
@@ -720,6 +807,9 @@
 
   /* ================= actions ================= */
   const actions = {
+    "timeline-text": () => {const value=$('#timeline-text')?.value?.trim();if(!value)return toast('Paste a case or upload files.','info');uploadTimelines([new File([value],'Case.txt',{type:'text/plain'})]);},
+    "timeline-start-retry": async el => {await startTimelineItem(intakeQueue[+el.dataset.i]);if(location.hash.startsWith('#/new'))renderTimelineUpload();},
+    "timeline-retry": async el => {el.disabled=true;try{await api(`/api/series/${el.dataset.id}/retry`,{body:seriesOptions()});onRoute();}catch(e){el.disabled=false;toast(e.message,'bad');}},
     reload: () => onRoute(),
     "profile-save": () => { saveWizard(); toast("Configuration saved. API key is session-only.", "ok"); viewSettings(); },
     "clear-key": () => { apiKey = ""; viewSettings(); toast("Session key cleared"); },
@@ -729,7 +819,7 @@
     "hist-f": (el) => { S.hist.f = el.dataset.f; $$("[data-action=hist-f]").forEach((b) => b.classList.toggle("on", b === el)); $("#hist-body").innerHTML = runRows(filterRuns()); },
     tab: (el) => { S.runTab = el.dataset.t; history.replaceState(null, "", `#/run/${encodeURIComponent(S.run.id)}?tab=${S.runTab}`); $$(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.t === S.runTab)); renderRunBody(); $("#view").scrollTop = 0; },
     print: () => { if (S.runTab !== "report") { S.runTab = "report"; renderRunShell(); } setTimeout(() => window.print(), 200); },
-    "reuse-case": () => { S.w = S.w || loadWizard(); S.w.case = caseFromJSON(S.run.case || {}); S.w.sources=[];S.w.labels=[];S.w.extractionIssues=[];delete S.w.extractedSources;intakeError="";intakeStage="";delete S.w.jsonDraft; S.w.jsonError = false; S.w.step = 0; S.w.caseMode = "form"; S.w.useDemoData = false; saveWizard(); location.hash = "#/new"; toast("Case loaded for a new recommendation", "ok"); },
+    "reuse-case": async el => {el.disabled=true;try{await prepareFollowup();}catch(e){toast(e.message,'bad');el.disabled=false;}},
     decision: (el) => { S.signDecision = el.dataset.d; $$("#decisions .decision").forEach((b) => b.classList.toggle("on", b === el)); },
     sign: async (el) => {
       const reviewer = $("#sign-name").value.trim(), comment = $("#sign-comment").value.trim();
@@ -808,7 +898,7 @@
   function renderKnowledge() {
     setView(`<div class="page-h"><div><h1 class="h1">Knowledge base</h1><p class="lead">Documents: ${K.stats.documents || 0} · Indexed passages: ${K.stats.chunks || 0}</p></div><button class="btn primary" data-action="kb-add">${icon("plus")}Add document</button></div>
       <section class="card"><div class="knowledge-toolbar"><div class="knowledge-search">${icon("search")}<input class="input" aria-label="Search knowledge base" data-input="kb-q" data-key="kb-search" placeholder="Search guidelines, drugs or clinical terms" value="${esc(K.q)}"><button class="btn primary" data-action="kb-search">Search</button></div><select class="select" aria-label="Specialist filter" data-change="kb-role"><option value="">All specialists</option>${ROLES.map(r=>`<option value="${r}" ${K.role === r ? "selected" : ""}>${r} · ${ROLE[r].short}</option>`).join("")}</select></div>
-      <div class="knowledge-controls"><div class="seg"><button data-action="kb-view" data-mode="active" class="${K.archived ? "" : "on"}">Documents</button><button data-action="kb-view" data-mode="archived" class="${K.archived ? "on" : ""}">Archived</button></div><div class="row"><span class="small muted">Used automatically for new recommendations</span></div></div>
+      <div class="knowledge-controls"><div class="seg"><button data-action="kb-view" data-mode="active" class="${K.archived ? "" : "on"}">Documents</button><button data-action="kb-view" data-mode="archived" class="${K.archived ? "on" : ""}">Archived</button></div><div class="row"><span class="small muted">${S.info?.retrieval?.enabled && S.info?.retrieval?.available ? 'Semantic + keyword retrieval' : 'Keyword retrieval'}</span></div></div>
       <div id="kb-results">${libraryRows()}</div><div class="knowledge-foot"><span>${icon("database")}Indexed locally</span><span id="kb-result-count">${K.results ? `Matching passages: ${K.results.length}` : "Source documents stored locally"}</span></div></section>`,crumb("Knowledge base"));
   }
   async function searchKnowledge() {
@@ -898,6 +988,7 @@
     const btn=$("[data-action=start]");if(btn)btn.disabled=intakeBusy;
   }
   const changes = {
+    "timeline-files": el => uploadTimelines(el.files),
     "kb-file": (el) => importKnowledgeFile(el.files[0]),
     "kb-synthetic": (el) => { K.form.synthetic=el.checked; },
     "kb-form-role": (el) => { K.form.roles=el.checked ? [...new Set([...K.form.roles,el.dataset.r])] : K.form.roles.filter(r=>r!==el.dataset.r); },
@@ -988,7 +1079,10 @@
     S.w.mode="llm";S.w.useDemoData=false;
     S.w.settings={...defaultsToSettings(),...(d.result?.settings?{max_revisions:d.result.settings.max_revisions,concurrency:d.result.settings.max_concurrency,timeout:d.result.settings.call_timeout,top_k:d.result.settings.top_k}:{})};
     S.w.llm={base_url:d.meta?.base_url||'',model:d.meta?.model||'',api_style:d.meta?.api_style||'responses',role_models:d.meta?.role_models||{}};
-    saveWizard();closeDrawer();location.hash='#/new';toast('Add records or generate an updated recommendation. Original report retained.','info');
+    saveWizard();closeDrawer();
+    const started=await api('/api/runs',{body:{mode:'llm',case:fresh.information_followup.case,evidence,retrieval:'frozen',parent_run_id:d.id,...seriesOptions()}});
+    location.hash='#/run/'+started.id;
+    toast('Updated recommendation started. Original report retained.','info');
   }
   Object.assign(actions, {
     'information-new':()=>openInformation(),
@@ -1102,7 +1196,8 @@
     const z = e.target.closest?.(".dropzone");
     if (z) {
       z.classList.remove("over");
-      if ($("[data-change=kb-file]", z)) importKnowledgeFile(e.dataTransfer.files[0]);
+      if ($("[data-change=timeline-files]", z)) uploadTimelines(e.dataTransfer.files);
+      else if ($("[data-change=kb-file]", z)) importKnowledgeFile(e.dataTransfer.files[0]);
       else importEvidenceFile(e.dataTransfer.files[0]);
     }
   });
@@ -1124,7 +1219,9 @@
     if (parts[0] === "new") return viewNew();
     if (parts[0] === "history") return viewHistory();
     if (parts[0] === "knowledge") return viewKnowledge();
-    if (parts[0] === "patients") return viewPatients();
+    if (parts[0] === "patients") return viewTimelines();
+    if (parts[0] === "memory") return viewPatients();
+    if (parts[0] === "series" && parts[1]) return viewSeries(decodeURIComponent(parts[1]));
     if (parts[0] === "settings") return viewSettings();
     if (parts[0] === "guide") return viewGuide();
     if (parts[0] === "run" && parts[1]) return viewRun(decodeURIComponent(parts[1]), new URLSearchParams(query || "").get("tab"));

@@ -10,6 +10,26 @@ from vte_review.workflow import Settings, Workflow
 
 
 class WorkflowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_invalid_citation_gets_one_scoped_repair_and_still_requires_valid_ids(self):
+        class RepairModel(DemoModel):
+            def __init__(self):
+                super().__init__(delay=0)
+                self.repairs = []
+            async def complete(self, task, role, payload):
+                if task == "assess" and role == "C":
+                    if "validation_repair" not in payload:
+                        return ModelReply({"summary":"Fixture", "evidence_ids":["invented"], "uncertainties":[]}, "fixture", {"total_tokens":7})
+                    self.repairs.append(payload["validation_repair"])
+                return await super().complete(task, role, payload)
+        model = RepairModel()
+        result = await self.run_case(model=model)
+        self.assertEqual(result["status"], "approved")
+        self.assertEqual(len(model.repairs), 1)
+        self.assertNotIn("invented", model.repairs[0]["allowed_evidence_ids"])
+        self.assertEqual(len([e for e in result["events"] if e["event"]=="call_repair_requested"]), 1)
+        done = next(e for e in result["events"] if e["event"]=="call_completed" and e["task"]=="assess" and e["role"]=="C")
+        self.assertEqual(done["requests"], 2)
+
     async def run_case(self, scenario="targeted", model=None, **settings):
         return await Workflow(model or DemoModel(scenario, delay=0), EvidenceIndex(DEMO_EVIDENCE), Settings(**settings)).run(DEMO_CASE)
 

@@ -1,84 +1,61 @@
-# VTE Anticoagulation Assistant v0.5.0：技术实现与论文写法
+# VTE Anticoagulation Assistant v0.7.0：技术实现与论文写法
 
-核实日期：2026-10-04。下述内容对应本仓库实际实现；硬件信息沿用 2026-10-03 的本机检查。
+核实日期：2026-10-07。本版替代旧版的整份病例提取与纯关键词检索说明。
 
-## 可用于初稿的方法段落
+## 可用于方法初稿的段落
 
-本系统采用本地部署的浏览器—服务端架构，在 Windows 11 工作站上运行。前端使用 HTML5、CSS3 与原生 JavaScript 构建英文交互界面，提供病例录入、知识库管理、多专家协作监控、版本对比及医师审阅功能；后端基于 Python 3.11.9 实现，通过标准库 HTTP 服务与服务器发送事件（Server-Sent Events，SSE）向前端持续推送工作流进度。多 Agent 编排采用 asyncio 异步任务与信号量控制：A、B、C 分别围绕抗凝获益与疗程、药物适用性与用药安全、出血风险与患者约束进行独立评估，D 汇总形成版本化草案。各专家并行审核其负责部分，D 根据问题单统一修订，再依据实际修改及段落依赖关系触发受影响专家复核，从而减少无需重复的模型调用。
+系统采用本地浏览器—服务端架构，前端以 HTML5、CSS3 和原生 JavaScript 构建英文界面，后端采用 Python 3.11.9 与标准库 ThreadingHTTPServer。病例 Word 通过 ZIP/XML 解析正文、段落顺序及图片关系，按显式就诊日期或阶段标题组织时间节点，再切分为至多 3,000 字符、2 张图片的提取块。提取任务由线程池、异步调用和全局信号量控制，最多同时读取 3 块；服务器发送事件（SSE）向前端持续推送提取、审核与节点完成状态。每块完整响应经结构及来源校验后保存，成功块在重试时复用。同一患者的临床判断按时间点依次执行，不同患者最多同时处理 2 例。
 
-知识库使用 SQLite 3.45.1 持久化保存资料正文、来源、版本和适用角色，支持文本录入及 PDF、TXT、Markdown、JSON 导入；PDF 文本提取使用 pypdf 6.16.2。资料按约 1,200 字符分段并保留 150 字符重叠上下文，通过 SQLite FTS5 建立全文索引。RAG 对英文词项和中文二元字组进行规范化处理，按角色筛选后采用 BM25 排序，标题与正文权重分别为 5 和 1，默认每个角色返回最多 4 条匹配证据（k = 4），并缓存相同查询的检索结果。每次审核固定选中资料的原文快照，确保后续引用可追溯至当时使用的来源与版本。
+多 Agent 工作流包括 A 的治疗获益与疗程评估、B 的临床药学与处方审核、C 的患者状态和变化评估，以及 D 的协调汇总。ABC 并行独立评估，D 汇总后交回各角色审核其负责内容；D 根据问题单修订，程序按实际修改及依赖关系重新分派受影响角色。B 核对既往及当前药物的使用状态、途径、剂量、相互作用、适应条件和给药可行性，C 判断症状、检验和病情变化及监测需求。各节点综合输出当前判断、较前变化、建议措施、理由和适用条件。一般缺项通过明确假设、备选分支和针对性补充问题处理。
 
-系统通过 httpx 0.28.1 对接 Chat Completions 或 Responses 模型接口，支持按角色配置模型，并以 JSON 输出和结构校验约束响应。Agent 可通过函数调用请求角色授权的证据检索、患者历史、临床资料核查、确定性计算或原图复查，程序执行后将结果返回同一模型会话。默认并行 Agent 会话数为 3，每个会话含工具往返的总超时为 60 秒，工具最多 4 轮、每轮最多 8 次，D 的修订上限为 3 次，每个模型请求最大生成长度为 3,000 tokens。运行记录区分会话数、已完成会话中的实际模型请求数、工具次数和返回的 token 用量。
+知识库以 SQLite 保存资料、来源、版本和角色，按约 1,200 字符、150 字符重叠分段。混合检索使用 SQLite FTS5/BM25 与多语言语义向量排序：嵌入模型为 sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2，通过 FastEmbed 和 ONNX Runtime 在本地 CPU 推理，输出 384 维向量。长片段按 480 字符窗口、440 字符步长编码后归一化聚合，语义相似度采用余弦计算；两路结果使用倒数排名融合（RRF，常数 60），各路候选池为 max(20, 4k)，默认每角色返回 k=4 条证据。向量按模型标识、编码算法版本和内容哈希缓存在 SQLite 中；整个患者时间线冻结证据快照，保存检索排名和引用轨迹。
 
-患者记忆独立保存于 SQLite，以患者及就诊标识组织记录，区分临床发生时间与资料可获得时间。每次评估按决策时点生成不可变记忆快照，模型建议以待确认记录保存，不直接改写患者事实。Word 正文及内嵌截图通过本地文件解析和模型视觉接口进入核查流程，提取结果保留数值、单位、日期、来源、位置及人工确认状态。Cockcroft–Gault、单位换算、药物数量与疗程天数由确定性 Python 工具执行。医生参考方案、专家审计及结局标签另存于运行目录，不进入独立生成任务的模型上下文。病例、证据、记忆快照、工具事件、草案版本及人工审核保存在 JSON/JSONL/Markdown 中，人工审核通过 SHA-256 关联对应草案。
-
-系统将建议审核与资料补充分别记录。一般缺项不阻断生成；涉及决策前提的未知信息以结构化假设表示，包含适用条件、条件不成立时的分支及相关角色。审核者可以对明确列出假设的建议作条件性通过，D 继续处理可修订问题。前端提供 22 项病例资料表，支持医生补充取值、确认不存在、标记本次不重要或暂不清楚。确认按批次追加留档；补传文件并生成新版时，复用原证据快照和模型设置，保存父运行标识，原始报告不被改写。
+患者历史以不可变时间线版本及各节点来源保存，区分提取资料、记录的临床治疗和既往模型建议。后续判断只访问当前及更早节点的源片段和相关图片，历史检验不会直接覆盖为当前值。医生确认的独立患者记忆保存在 SQLite 中并保留时间与修订，模型建议不自动成为已确认事实。追加随访建立新版本；相同上下文、模型/提示配置及证据快照的已完成节点可复用。模型请求通过 httpx 对接配置的 Responses 或 Chat Completions 服务，结构化输出经 Python 校验；临床计算与来源读取由角色授权工具执行。
 
 ## 实际技术栈
 
-| 层次 | 已实现技术 | 对应代码 |
+| 层次 | 技术 | 对应代码 |
 |---|---|---|
-| 前端 | HTML5、CSS3、原生 JavaScript；英文蓝白界面；Hash 路由；Fetch；EventSource；四个本地 SVG 机器人；响应式布局 | `vte_review/web/` |
-| 本地界面 | Windows 启动脚本；Edge / Chrome `--app` 窗口，回退默认浏览器 | `启动系统.bat`、`server.py` |
-| HTTP 服务 | Python 标准库 `ThreadingHTTPServer`，JSON API 与 SSE | `server.py` |
-| Agent 编排 | `asyncio.gather`、Semaphore、版本草案、依赖传播、定向复核 | `workflow.py`、`contracts.py` |
-| 知识库 | SQLite 3.45.1；documents / chunks / FTS5 表；WAL；去重；归档恢复；不可变资料版本 | `knowledge.py` |
-| 知识库 RAG | FTS5 / BM25；角色过滤；运行时固定快照；内存缓存；来源与版本信息 | `knowledge.py` |
-| 文件证据检索 | 直接导入证据 JSON / CLI 仍采用词项重合排序 | `retrieval.py` |
-| PDF 解析 | pypdf 6.16.2 提取文本层；不包含 OCR | `server.py` |
-| 模型连接 | httpx 异步客户端；Chat Completions / Responses；JSON 输出；有界 function-calling 会话 | `providers.py` |
-| 临床工具 | Cockcroft–Gault、单位/数量/疗程计算、有限说明书模式检查、分角色权限 | `clinical.py`、`clinical_tools.py` |
-| 患者记忆 | SQLite 追加记录、双时间截断、来源、修订、模型建议人工审核 | `patient_memory.py` |
-| 病例文档/图片 | ZIP/XML 提取 DOCX 正文及内嵌图；Pillow 校验；模型视觉读数；人工确认 | `intake.py`、`workspace.py` |
-| 条件性建议与资料表 | 22 字段、四种医生回应、追加记录、假设结构校验、条件性审核、父子运行关联 | `information.py`、`contracts.py`、`workflow.py`、`workspace.py` |
-| 提示模板 | 按角色及 assess/synthesize/review/revise 阶段组织；固定提示版本 | `prompts.py` |
-| 数据 | 知识库保存在 SQLite；审核记录使用 JSON / JSONL / Markdown；浏览器 localStorage 保存表单和非密钥配置 | `knowledge.py`、`server.py`、`cli.py`、`web/app.js` |
-| 验证 | Python unittest、httpx MockTransport、浏览器交互与布局检查 | `tests/`、`docs/verification.md` |
+| 前端 | HTML/CSS/JavaScript、Hash 路由、Fetch、EventSource、英文蓝白界面 | web/ |
+| 后端 | Python 3.11.9、ThreadingHTTPServer、线程和 asyncio | server.py、longitudinal.py |
+| Agent 编排 | ABC 并行、D 唯一修改、依赖传播、定向复核、有界循环 | workflow.py、contracts.py |
+| 文档/图片 | ZIP/XML 按 DOCX 关系表定位图片；Pillow 12.3.0 校验 | intake.py |
+| 知识库 PDF | pypdf 6.19.0 提取文本层 | server.py |
+| 关键词检索 | SQLite 3.45.1 / FTS5 / BM25；标题权重 5、正文 1 | knowledge.py |
+| 向量检索 | FastEmbed 0.8.1、ONNX Runtime 1.30.0、NumPy 2.4.6；多语言 MiniLM 384 维；余弦 + RRF | vector.py |
+| 持久化 | SQLite 知识库/向量/医生确认记忆；JSON 时间线版本与来源；JSONL 审核事件 | knowledge.py、vector.py、patient_memory.py、longitudinal.py |
+| 模型连接 | httpx 0.28.1；Responses / Chat Completions；JSON 与 function calling | providers.py |
+| 临床工具 | CrCl、单位/数量/疗程计算、有限说明书规则、证据与原图查询 | clinical.py、clinical_tools.py |
+| 验证 | unittest、隔离模型夹具、本地真实向量检索、浏览器交互 | tests/、verification.md |
 
-## 参数与本机环境
+## 参数与数据位置
 
-| 项目 | 当前值 |
+| 参数 | 当前值 |
 |---|---|
-| 操作系统 | Windows 11 家庭版，系统版本 10.0.26200 |
-| CPU | AMD Ryzen 7 7840H |
-| 系统报告可用物理内存总量 | 约 15.2 GiB |
-| 系统显示适配器 | AMD Radeon 780M Graphics |
-| Python / httpx | 3.11.9 / 0.28.1 |
-| SQLite / pypdf | 3.45.1 / 6.16.2 |
-| 本地服务地址 | 默认 `127.0.0.1:8765`；端口占用时尝试后续端口 |
-| Top-K / 并发 / 修订 / 超时 | 4 / 3 / 3 / 60 秒，可在运行配置中调整 |
-| max_completion_tokens | 3000 |
-| temperature | 当前请求不显式设置，由所连接端点的默认行为决定 |
-| 提示版本 | `2026-10-04.en.v4`，要求模型输出英文；资料表及界面统一使用英文 |
-| 工具会话 | 最多 4 轮工具调用，每轮最多 8 次；最后输出最多共 5 个模型请求 |
-| 图片提取 | D 角色配置的视觉模型；整体超时 120 秒；最多 12 张图片 |
+| 提取块 | 最多 3,000 字符 / 2 图；保留段落与图片关联；无标点长段落按长度切分 |
+| 提取并发 / 单块超时 | 全局 3 / 120 秒 |
+| 患者并发 | 2；同一患者建议顺序生成 |
+| ABC 并发 / D 修订上限 | 3 / 3，可配置 |
+| 格式/引用修复 | 同一 Agent 最多重试修复 1 次，仍在原会话超时预算内；校验不放宽 |
+| 默认 Top-K | 每角色 4，可配置 |
+| FE 启动器 | Sol；Responses；low 推理强度；最多 6,000 输出 token；每 Agent 会话 240 秒 |
+| 通用服务默认 | 每会话 60 秒；最多 3,000 输出 token；模型由配置指定 |
+| 温度 | 未显式设置，不写成 0.1 |
+| 提示版本 | 2026-10-07.en.v7 |
+| 计算位置 | 嵌入模型在本机 CPU；临床 LLM 在配置的 API 服务端 |
+| 本机入口 | http://127.0.0.1:8774/#/new |
 
-默认数据库为 `runs/knowledge.sqlite3` 与 `runs/patients.sqlite3`，随 `--runs` 指定的目录改变。数据库自动初始化，无需独立服务。知识库版本以新增资料保留，归档可恢复；每次评估保存 `evidence.json` 与 `memory_snapshot.json`。显式执行的参考资料导入脚本支持 4 个固定官方来源 URL；本机已导入 4 份、386 个片段，原件与抓取摘要存于 `reference_sources/`。程序不会在运行模型时自动更新这些来源。
+- runs/knowledge.sqlite3：知识文档、片段及 FTS5。
+- runs/vectors.sqlite3：模型/内容寻址的 float32 向量缓存。
+- runs/embedding-models/：公开嵌入模型权重。
+- runs/sources/：上传文件、按时间隔离的片段及图片。
+- runs/extraction_cache/：按块和模型/提示配置缓存的原始及校验后结果。
+- runs/series/SER-*/：患者时间线、证据快照和事件；支持失败/重启后重试。
+- runs/<run-id>/：各时间点的病例、证据、retrieval_trace.json、草案、审核与签署。
+- runs/patients.sqlite3：医生确认的历史记忆；模型建议需明确审核。
 
-这些硬件承载本地界面、检索和流程编排。实际模型推理位于配置的 API 服务端；本次未启动本机大模型推理。
+上述私有运行数据、数据库和权重被 Git 忽略。没有引入 Milvus、PostgreSQL、FastGPT，也没有本机 A100 临床大模型推理。安装命令：python -m pip install -e ".[llm,pdf,images,vector]"。首次使用向量检索下载公开模型，后续使用本地缓存；未安装 vector 或 VTE_VECTOR_ENABLED=0 时明确显示关键词检索，已启用的向量编码故障明确报错。
 
-## 后续研究需冻结的实验信息
+## 研究解释边界
 
-实际实验时补充：服务端模型标识与版本、推理部署位置与硬件、明确的采样参数、知识库冻结日期与版本、重复运行次数，以及按病例记录的端到端耗时、模型调用数和 token 使用量。
-
-当前代码没有 FastGPT、Milvus、PostgreSQL、向量嵌入或加权混合检索，也没有统计分析模块。不能把示例中的 A100、temperature=0.1、k=5、低于 100 毫秒延迟或 SciPy/Statsmodels 写为本版本已完成的实现。演示的 0.8 秒调用节奏是为可视化设置的模拟等待，不是实际模型性能。
-
-
-## 2026-10-04 FE 接口联调配置
-
-产品名改为 **VTE Anticoagulation Assistant**；主入口为 New recommendation / Generate recommendations，原有处方核查与内部定向审核保留。Python 包及仓库路径不变。
-
-用户指定使用 FE（https://api.forceeasyai.com/v1）的 `gpt-6-astra` 与 `gpt-5.6-sol`。本机启动器只读已有 FE 配置，在服务进程内设置密钥，不复制到项目文件。采用 Responses 流式接收：以 response.completed 的完整对象继续工具会话，仅有输出片段而无完成事件时不返回有效答案；保留兼容端点的完整 JSON 响应。JSON 模式要求在输入消息中明确 JSON，适配器已处理。
-
-本次真实运行配置：每组四个角色使用同一个指定模型，reasoning.effort=low，max_output_tokens=6000，top_k=4，并发上限3，最多3次修订，每个Agent含工具会话总上限240秒。通用启动入口仍默认60秒/3000输出token/未指定推理强度；FE启动入口采用上述覆盖值。温度依然未显式指定。连接与参数存入每次运行meta，密钥除外。
-
-本轮以基线资料作回顾性软件展示，原临床决策时点及部分检验时间未确认；原始后续处方和结局未进入模型。不能把此次单病例联调写成时间截断已冻结的临床评测或效果验证。
-
-
-## 2026-10-05 v0.6 自动上传流程
-
-前端维持原生 JavaScript/HTML/CSS 英文蓝白界面，采用一个页面的自动上传流程。文件选择触发本地来源保存、模型提取和真实模型运行；不再呈现手动提取、Demo/Model 选择或 Evidence 文件选择步骤。模型连接统一在 Settings 配置。病例编号和默认问题自动生成，研究时间和人工更正按需展开。
-
-后端新增显式 input_mode=automatic：提取项仍标记 unverified，保留来源、原始日期和单位；未知日期不替换为上传时间。普通缺项与无法确定先后顺序的冲突通过条件化建议处理；主动指定历史决策时点时仍检查未来数据。并未把机器提取自动写成医生确认或患者长期记忆。
-
-运行请求使用 retrieval=automatic，服务端选择启用且非 synthetic 的知识库文档并冻结该次快照；原 SQLite FTS5/BM25 按角色 Top-K 检索、工具调用、ABC/D 定向复核和修订上限不变。生成模式固定为 llm，服务端省略 mode 时也不再隐式启动演示。内部确定性模拟器仅保留供 CLI 和测试验证，历史演示结果仍标明来源。
+流式是分块完成与节点进度流，不把未校验的部分 JSON 逐 token 展示为结论。自动时间分组依赖明确标题；无可靠分界的材料保留在同一节点，日期不明保持未知。知识库内容不会因增加向量算法而自动扩充；药品和疾病覆盖不足仍需补充来源。软件测试和合成病例实跑不等于临床效能验证。

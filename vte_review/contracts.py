@@ -7,8 +7,8 @@ from typing import Any
 ROLES = ("A", "B", "C")
 ROLE_NAMES = {
     "A": "Anticoagulation benefit and duration",
-    "B": "Drug eligibility and medication safety",
-    "C": "Bleeding risk and patient constraints",
+    "B": "Clinical pharmacy and prescription safety",
+    "C": "Patient status, changes and monitoring",
     "D": "Coordination and revision",
 }
 
@@ -47,7 +47,7 @@ def citations(value: Any, evidence_ids: set[str], label: str) -> None:
 
 def validate_case(value: Any) -> dict:
     required = {"case_id", "question", "facts", "missing_information"}
-    optional = {"patient", "task_type", "candidate_plan", "observations", "source_ids", "source_context", "information_responses", "input_mode", "extraction_issues"}
+    optional = {"patient", "task_type", "candidate_plan", "observations", "source_ids", "source_context", "information_responses", "input_mode", "extraction_issues", "longitudinal"}
     if not isinstance(value, dict) or not required <= set(value) or set(value) - required - optional:
         raise ContractError("case: expected core fields and supported patient/source fields; keep research labels separate")
     text(value["case_id"], "case_id")
@@ -79,8 +79,8 @@ def validate_case(value: Any) -> dict:
                 raise ContractError("candidate_plan is input only for review_plan; save it separately as a research label")
             text(value["candidate_plan"], "candidate_plan")
         ids = strings(value.get("source_ids", []), "source_ids")
-        if len(ids) > 12 or any(not SOURCE_ID.fullmatch(i) for i in ids):
-            raise ContractError("source_ids: at most 12 uploaded source IDs")
+        if len(ids) > (120 if "longitudinal" in value else 12) or any(not SOURCE_ID.fullmatch(i) for i in ids):
+            raise ContractError("source_ids: too many uploaded sources")
         context = value.get("source_context", {})
         if not isinstance(context, dict) or set(context) != set(ids):
             raise ContractError("source_context: supply available_at and reviewer for each source")
@@ -108,6 +108,31 @@ def validate_case(value: Any) -> dict:
                     raise ContractError("A confirmed observation needs a readable value")
                 if instant(obs["available_at"]) < instant(obs["observed_at"]):
                     raise ContractError("Observation availability cannot precede its clinical date")
+        if "longitudinal" in value:
+            history = object_fields(value["longitudinal"], {"patient_id", "node_id", "time_label", "time_precision", "prior_events", "new_information", "previous_recommendation"}, "longitudinal")
+            identifier(history["patient_id"])
+            identifier(history["node_id"])
+            text(history["time_label"], "time_label")
+            if history["time_precision"] not in {"date", "relative", "unknown"}:
+                raise ContractError("Unknown timeline precision")
+            for field in ("prior_events", "new_information"):
+                if not isinstance(history[field], list) or len(history[field]) > 120:
+                    raise ContractError("Timeline events exceed the source limit")
+                for event in history[field]:
+                    object_fields(event, {"time_label", "source_id", "text", "observations", "status", "issues"}, "timeline event")
+                    if event["source_id"] not in ids or event["status"] != "model_extracted":
+                        raise ContractError("Timeline context requires an attached, unverified source")
+                    text(event["time_label"], "event label")
+                    if not isinstance(event["text"], str):
+                        raise ContractError("Timeline text must be a string")
+                    from .intake import validate_extraction
+                    allowed = {event["source_id"]} | {o.get("source_id") for o in event["observations"] if isinstance(o, dict)}
+                    validate_extraction({"observations": event["observations"], "issues": event["issues"]}, allowed)
+            previous = history["previous_recommendation"]
+            if previous is not None:
+                object_fields(previous, {"time_label", "run_id", "status", "recommendation", "kind"}, "previous recommendation")
+                if previous["kind"] != "model_suggestion":
+                    raise ContractError("Prior model output cannot be labeled a patient fact")
         import json
         json.dumps(value, allow_nan=False)
         from .information import validate_responses

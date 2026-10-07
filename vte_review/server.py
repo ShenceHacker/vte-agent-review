@@ -42,11 +42,13 @@ from .providers import ProviderError
 from .example_case import CLINICAL_EXAMPLE
 from .clinical import FIELD_SPECS
 from .information import ABSENT_VALUES, ZH_LABELS
+from .longitudinal import LongitudinalServices, load as load_series
+from .vector import VectorStore, HybridEvidenceIndex
 
 WEB = Path(__file__).with_name("web")
 RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$")
 STATIC = re.compile(r"^[A-Za-z0-9_-]+\.(?:html|css|js|svg|png|ico)$")
-MAX_BODY = 9 * 1024 * 1024
+MAX_BODY = 34 * 1024 * 1024
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 DECISIONS = {"accept", "accept_with_changes", "reject"}
 SCENARIOS = {
@@ -111,15 +113,18 @@ class Job:
             self.cond.notify_all()
 
 
-class App(WorkspaceServices):
-    def __init__(self, runs_dir: Path):
+class App(WorkspaceServices, LongitudinalServices):
+    def __init__(self, runs_dir: Path, *, allow_debug=False):
         self.runs = Path(runs_dir).resolve()
         self.runs.mkdir(parents=True, exist_ok=True)
         self.jobs: dict[str, Job] = {}
+        self.series_jobs = {}
+        self.allow_debug = allow_debug
         self.lock = threading.Lock()
         self.knowledge = KnowledgeStore(self.runs / "knowledge.sqlite3")
         self.memory = PatientMemory(self.runs / "patients.sqlite3")
         self.sources = SourceStore(self.runs / "sources")
+        self.vectors = VectorStore(self.runs)
 
     # ---------- queries ----------
     def info(self) -> dict:
@@ -131,12 +136,14 @@ class App(WorkspaceServices):
         return {
             "version": __version__, "prompt_version": PROMPT_VERSION, "runs_dir": str(self.runs),
             "knowledge": self.knowledge.stats(),
+            "retrieval": self.vectors.status(),
             "capabilities": ["patient_memory", "source_images", "docx_intake", "tool_calling", "clinical_checks", "research_labels", "conditional_recommendations", "information_followup", "automatic_intake"],
             "information_fields": [{"field": k, "label": label, "label_zh": ZH_LABELS[k], "roles": list(roles),
                                     "priority": "decision_dependent" if critical else "optional", "allow_absent": k in ABSENT_VALUES}
                                    for k, label, roles, critical in FIELD_SPECS],
             "roles": ROLE_NAMES, "httpx": has_httpx,
-            "defaults": asdict(Settings(call_timeout=float(os.environ.get("VTE_CALL_TIMEOUT", "60")))), "scenarios": SCENARIOS,
+            "defaults": asdict(Settings(call_timeout=float(os.environ.get("VTE_CALL_TIMEOUT", "60")))),
+            "scenarios": SCENARIOS if self.allow_debug else {},
             "env": {
                 "base_url": os.environ.get("VTE_BASE_URL", ""),
                 "model": os.environ.get("VTE_MODEL", ""),
@@ -192,16 +199,36 @@ class App(WorkspaceServices):
             "model": meta.get("model"), "version": result.get("version"), "revisions": result.get("revisions"),
             "metrics": result.get("metrics"), "signoff": signoffs[-1] if signoffs else None,
             "source": meta.get("source", "cli"),
+            "purpose": meta.get("purpose", "clinical"),
         }
 
     def list_runs(self) -> list[dict]:
         items = [s for p in self.runs.iterdir() if p.is_dir() and RUN_ID.match(p.name) and (s := self.summary(p))]
+        if not self.allow_debug:
+            items = [s for s in items if s["mode"] not in {"demo", "synthetic_demo"} and s["purpose"] != "software_test"]
         return sorted(items, key=lambda s: s["created_at"], reverse=True)
+
+    def search_knowledge(self, query, role="", limit=20):
+        if role and role not in ROLES or not 1 <= limit <= 100:
+            raise ValueError("Invalid knowledge search settings")
+        if self.allow_debug:
+            return self.knowledge.search(query, role, limit)
+        ids = [d["id"] for d in self.knowledge.list_documents() if not d["synthetic"]]
+        if not ids or not query.strip():
+            return []
+        index = HybridEvidenceIndex(self.knowledge.snapshot(ids), self.vectors)
+        try:
+            found = {d["id"]: d for r in ((role,) if role else ROLES) for d in index.search(query, r, limit)}
+            return [{**d, "document_id": d["id"].rsplit("-", 1)[0], "ordinal": int(d["id"].rsplit("-", 1)[1])} for d in found.values()][:limit]
+        finally:
+            index.close()
 
     def detail(self, run_id: str) -> dict:
         path = self.run_dir(run_id)
         summary = self.summary(path)
         if summary is None:
+            raise LookupError(run_id)
+        if not self.allow_debug and summary["mode"] in {"demo", "synthetic_demo"}:
             raise LookupError(run_id)
         result = read_json(path / "result.json")
         if isinstance(result, dict):
@@ -281,6 +308,8 @@ class App(WorkspaceServices):
             body = {**body, "evidence": frozen}
             meta.update(knowledge_ids=knowledge_ids, retrieval="SQLite FTS5 / BM25", evidence_snapshot=True)
         if mode == "demo":
+            if not self.allow_debug:
+                raise ValueError("Demo is available only through the internal debug interface")
             scenario = body.get("scenario", "targeted")
             if scenario not in SCENARIOS:
                 raise ValueError("Unknown demo scenario")
@@ -324,7 +353,11 @@ class App(WorkspaceServices):
         else:
             raise ValueError("Unknown mode")
 
-        if frozen is not None:
+        if mode == "llm":
+            index = HybridEvidenceIndex(list(index.documents.values()), self.vectors)
+            meta.update(retrieval=self.vectors.status()["method"], embedding_model=self.vectors.model_name,
+                        evidence_snapshot=True)
+        elif frozen is not None:
             index = SQLiteEvidenceIndex(frozen)
 
         if parent_run_id:
@@ -368,6 +401,7 @@ class App(WorkspaceServices):
                             "roles": proposal["roles"], "encounter_id": p["encounter_id"]}, actor="Agent D", model=True))
                 write_json(out / "memory_updates.json", updates)
                 write_json(out / "result.json", result)
+                write_json(out / "retrieval_trace.json", getattr(index, "traces", []))
                 (out / "report.md").write_text(report(result), encoding="utf-8")
             finally:
                 close = getattr(model, "close", None)
@@ -511,6 +545,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(self.app.info())
             if url.path == "/api/runs":
                 return self.send_json({"runs": self.app.list_runs()})
+            if url.path == "/api/series":
+                return self.send_json({"series": self.app.list_series()})
+            series_match = re.fullmatch(r"/api/series/(SER-[a-f0-9]{32})(/stream)?", url.path)
+            if series_match:
+                series_id, stream = series_match.groups()
+                if stream:
+                    after = int(parse_qs(url.query).get("after", ["0"])[0] or 0)
+                    last = self.headers.get("Last-Event-ID", "")
+                    return self.stream(series_id, max(0, after, int(last) if last.isdigit() else 0), series=True)
+                return self.send_json(self.app.series_detail(series_id))
+            if url.path.startswith("/api/demo") and not self.app.allow_debug:
+                return self.send_json({"error": "Debug endpoint is disabled"}, 404)
             if url.path == "/api/demo":
                 return self.send_json({"case": DEMO_CASE, "evidence": DEMO_EVIDENCE, "scenarios": SCENARIOS})
             if url.path == "/api/demo/clinical":
@@ -533,7 +579,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"documents": self.app.knowledge.list_documents(query.get("archived") == ["1"]), "stats": self.app.knowledge.stats()})
             if url.path == "/api/knowledge/search":
                 query = parse_qs(url.query)
-                return self.send_json({"results": self.app.knowledge.search(query.get("q", [""])[0], query.get("role", [""])[0], int(query.get("limit", ["20"])[0]))})
+                return self.send_json({"results": self.app.search_knowledge(query.get("q", [""])[0], query.get("role", [""])[0], int(query.get("limit", ["20"])[0])), "retrieval": self.app.vectors.status()})
             knowledge_match = re.fullmatch(r"/api/knowledge/(KB-[a-f0-9]{32})", url.path)
             if knowledge_match:
                 return self.send_json(self.app.knowledge.get(knowledge_match.group(1)))
@@ -582,6 +628,13 @@ class Handler(BaseHTTPRequestHandler):
             path = urlparse(self.path).path
             if path == "/api/runs":
                 return self.send_json({"id": self.app.start(body)}, 201)
+            if path == "/api/series":
+                return self.send_json({"id": self.app.start_series(body)}, 201)
+            retry_match = re.fullmatch(r"/api/series/(SER-[a-f0-9]{32})/retry", path)
+            if retry_match:
+                return self.send_json({"id": self.app.retry_series(retry_match.group(1), body)})
+            if path == "/api/sources/archive":
+                return self.send_json({"sources": self.app.sources.ingest_archive(body.get("filename"), body.get("content_base64"))}, 201)
             if path == "/api/validate":
                 return self.send_json(self.app.validate(body))
             if path == "/api/clinical/check":
@@ -627,8 +680,8 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
             pass
 
-    def stream(self, run_id: str, after: int):
-        self.app.run_dir(run_id)
+    def stream(self, run_id: str, after: int, series=False):
+        path = self.app.series_path(run_id) if series else self.app.run_dir(run_id)
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
@@ -640,9 +693,10 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(chunk.encode("utf-8"))
             self.wfile.flush()
 
-        job = self.app.jobs.get(run_id)
+        job = (self.app.series_jobs if series else self.app.jobs).get(run_id)
         if job is None:  # finished before this server started: replay from disk
-            for event in self.app.detail(run_id)["events"][after:]:
+            events = load_series(path / "events.json", []) if series else self.app.detail(run_id)["events"]
+            for event in events[after:]:
                 send(f"id: {event.get('seq', '')}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n")
             return send("event: done\ndata: {}\n\n")
         send("retry: 1500\n\n")
@@ -691,7 +745,7 @@ def open_window(url: str) -> None:
     webbrowser.open(url)
 
 
-def make_server(host: str = "127.0.0.1", port: int = 8765, runs_dir: str | Path = "runs") -> Server:
+def make_server(host: str = "127.0.0.1", port: int = 8765, runs_dir: str | Path = "runs", *, allow_debug=False) -> Server:
     ports = [port] + [port + i for i in range(1, 20)] if port else [0]
     last_error = None
     for candidate in ports:
@@ -702,7 +756,7 @@ def make_server(host: str = "127.0.0.1", port: int = 8765, runs_dir: str | Path 
             last_error = exc
     else:
         raise OSError(f"no free port near {port}: {last_error}")
-    httpd.app = App(Path(runs_dir))  # type: ignore[attr-defined]
+    httpd.app = App(Path(runs_dir), allow_debug=allow_debug)  # type: ignore[attr-defined]
     httpd.loopback = host in LOOPBACK  # type: ignore[attr-defined]
     return httpd
 

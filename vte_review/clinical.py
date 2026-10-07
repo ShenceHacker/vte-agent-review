@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 from .patient_memory import instant
 
-RULE_VERSION = "2026-10-05.v3"
+RULE_VERSION = "2026-10-07.v4"
 CG_SOURCE = "https://www.kidney.org/professionals/kdoqi/cockcroft-gault-equation-estimating-creatinine-clearance"
 RIVA_SOURCE = "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=7e9ab975-db2f-423c-a089-bc5a73313609"
 NICE_SOURCE = "https://www.nice.org.uk/guidance/ng158/chapter/Recommendations"
@@ -24,11 +24,11 @@ FIELD_SPECS = [
     ("prior_vte", "Previous VTE (yes/no/unknown and details)", "A", False),
     ("provoking_factors", "Recent / persistent risk factors and dates", "A", False),
     ("mobility", "Current mobility", "AC", False),
-    ("serum_creatinine", "Creatinine {value,unit,observed_at}", "B", True),
-    ("renal_stable", "Stable renal function (true/false/unknown)", "B", True),
+    ("serum_creatinine", "Creatinine {value,unit,observed_at}", "BC", True),
+    ("renal_stable", "Stable renal function (true/false/unknown)", "BC", True),
     ("hemoglobin", "Haemoglobin {value,unit,observed_at}", "C", True),
     ("platelets", "Platelets {value,unit,observed_at}", "BC", True),
-    ("liver_status", "Liver disease and available liver tests", "B", True),
+    ("liver_status", "Liver disease and available liver tests", "BC", True),
     ("active_bleeding", "Current active bleeding (true/false/unknown)", "C", True),
     ("bleeding_history", "Previous bleeding / gastrointestinal history", "C", False),
     ("current_anticoagulation", "Anticoagulation already received (or explicitly none)", "AB", True),
