@@ -23,7 +23,9 @@ def time_label(key,label):
 
 def export():
     ASSETS.mkdir(parents=True,exist_ok=True);manifest=load(DATA/'manifest.json');cases=[];audit=[]
-    old=ROOT/'runs/evaluation-20261009';new=DATA/'processing/sol-20261012'
+    old=DATA/'private/history/evaluation-20261009'
+    if not old.exists():old=ROOT/'runs/evaluation-20261009'
+    new=DATA/'processing/sol-20261012'
     for record in manifest['cases']:
         cid=record['case_id'];source=old if int(cid[4:])<=10 else new
         batch=load(source/'batch.json',{});state=batch.get(cid);series=load(source/'workspace/series'/state['series_id']/'series.json',{}) if state else {}
@@ -58,7 +60,9 @@ def export():
             reference={'text':gold[pos]['physician_prescription'],'images':[]}
             if gold[pos].get('diagnosis_reference'):reference['text']='诊断记录参照：'+gold[pos]['diagnosis_reference']+'\n\n'+reference['text']
             if int(cid[4:])<=10 and pos==0:
-                reference['images'].append(image_asset(ROOT/'runs/pharmacist-review-20261007'/cid/'image4.png','本次住院医嘱'))
+                order=DATA/'private/cases'/cid/'image4.png'
+                if not order.exists():order=ROOT/'runs/pharmacist-review-20261007'/cid/'image4.png'
+                reference['images'].append(image_asset(order,'本次住院医嘱'))
             for sid in gold[pos].get('prescription_images',[]):reference['images'].append(image_asset(source/'workspace/sources'/sid/'source.bin','本次医生医嘱'))
             encoded=json.dumps(rec);ids=set(re.findall(r'KB-[A-Za-z0-9-]+',encoded))
             trace=load(folder/'retrieval_trace.json',[])
