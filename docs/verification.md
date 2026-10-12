@@ -1,5 +1,13 @@
 # 验证记录
 
+## 2026-10-12 — 中文病例库与医生评审站
+
+- 本轮实现的完整软件检查为167项unittest通过；覆盖邮箱验证码、会话、访问隔离、评分校验、草稿版本、提交锁定、重复导入及不可替换已发布回答。复接会话时核对了原始测试输出，未把临床运行完成计作软件测试。
+- 统一数据目录去重后30例：旧10例41个节点复用，新增20例66个节点全部产生最终建议。旧回答仅增加中文译文并保留英文原文，新回答直接中文生成。共96个节点完成内部审核、11个保留分歧；这些计数不是医生评价或临床正确率。
+- `scripts/verify_rating_bundle.py --previous-archive runs/rating-portal-release-b.tar.gz`：107个回答与原运行/译文对应、来源不跨未来节点、旧48个已发布回答完全一致，139张引用图片PNG格式和SHA-256均通过。核验详情保存在Git忽略的`data/vte_dataset/final-verification.json`；仅检查已知个人编号/地址模式，不替代完整隐私审计或临床核对。
+- 后台浏览器使用隔离合成病例完成七维评分、自动保存、提交后进入下一节点，以及回看已锁定评分/开放医生参照；1280×720无文档溢出，未观察到JS错误。测试截图和评分仅在`runs/rating-portal-qa`，不进入正式病例评分库。
+- 评分规则为`VTE-R1-2026-10-12`研究初版。正式医生试评、量表校准、独立临床验证和统计分析尚未完成。邮件服务连接与认证已检查，真实收件须由授权医生正常发起验证码登录确认。
+
 ## 2026-10-07 — v0.7 longitudinal intake and hybrid retrieval
 
 - Final automated check: 140 unittest tests pass; JavaScript syntax and Git whitespace checks pass. Regression coverage also ensures a coordinator draft is retained and marked incomplete when its review fails.

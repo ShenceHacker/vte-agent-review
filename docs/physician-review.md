@@ -31,9 +31,12 @@
 
 - 统一本地目录：`data/vte_dataset/`（Git忽略）。`private/`保存原件和导入来源，`manifest.json`记录文件/临床内容指纹与重复关系；原件不覆盖。
 - `results/evaluation-20261009/`复用前10例结果；`processing/sol-20261012/`仅处理新20例；`translations/`保存旧结果中文译文和源哈希。
+- `private/history/evaluation-20261009/`保存旧10例完整运行归档，导出脚本优先从此目录读取；原`runs`记录保留。当前批次共30例、107个时间点，全部有中文报告。
 - `portal/bundle.json`及`portal/assets/`是允许上传的脱敏病例包；原始Word、私有映射、模型API密钥不会打入发布包。
 - `scripts/export_rating_bundle.py`仅导出有最终建议的节点，技术失败草稿不当作完成建议；缺中文版本的节点暂不发布。服务器还会防止跨时间点访问。
 - 医生评分独立存服务器`/var/lib/vte-review/ratings.sqlite3`，不由病例导出脚本覆盖；发布前以SQLite backup API做本机备份。
+
+完整导出后运行`python scripts/verify_rating_bundle.py --previous-archive runs/rating-portal-release-b.tar.gz`，核对每个时间点的来源、中文报告与原运行对应关系、已发布回答不可变，以及全部引用图片的哈希。核验输出写入本地忽略目录`data/vte_dataset/final-verification.json`。该命令只验证数据完整性，不给真实病例评分。网站仅在核对具体包后手动更新，未启用持续后台上传。
 
 ## 运维
 
