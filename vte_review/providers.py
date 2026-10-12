@@ -36,7 +36,7 @@ class ChatCompletionsModel:
     def __init__(self, base_url: str, api_key: str, model: str, *, role_models: dict | None = None,
                  timeout: float = 60, max_tokens: int = 3000, transport=None,
                  api_style: str = "chat_completions", max_tool_rounds: int = 4,
-                 reasoning_effort: str | None = None):
+                 reasoning_effort: str | None = None, output_language: str = "en"):
         import httpx
 
         parsed = urlparse(base_url)
@@ -49,6 +49,9 @@ class ChatCompletionsModel:
         if reasoning_effort not in {None, "none", "minimal", "low", "medium", "high", "xhigh", "max"}:
             raise ValueError("Invalid reasoning effort")
         self.reasoning_effort = reasoning_effort
+        if output_language not in {"en", "zh"}:
+            raise ValueError("Output language must be en or zh")
+        self.output_language = output_language
         self.model = model
         self.role_models = role_models or {}
         self.max_tokens = max_tokens
@@ -138,6 +141,19 @@ class ChatCompletionsModel:
     async def _dialog(self, task, role, payload, session=None, images=None):
         selected = self.role_models.get(role, self.model)
         prompt = system_prompt(task, role)
+        if self.output_language == "zh" and task in {"assess", "synthesize", "review", "revise"}:
+            prompt = prompt.replace("Return a single JSON object in English.",
+                "Return a single JSON object. Write all free-text clinical content in Simplified Chinese. "
+                "Preserve JSON keys, enum constants, identifiers, tool names, numbers and units exactly as specified.")
+            prompt += ("\nChinese-output format clarification (language contract v2): "
+                       "evidence_ids is exclusively for exact guideline/product-label IDs in the supplied evidence. "
+                       "Patient source IDs beginning SRC- belong to case provenance, not evidence_ids; "
+                       "you may mention them in summary text to locate patient facts. Cite only genuinely supporting "
+                       "retrieved evidence for clinical recommendations, use evidence tools if needed, and never invent "
+                       "or substitute a citation merely to pass validation. "
+                       "In roles, related_roles, affected_roles and depends_on, allowed role codes are A, B and C only; "
+                       "never put D or a translated role name in those lists. Preserve the task's verdict enum exactly. "
+                       "For longitudinal coordinator prose use Chinese headings 当前判断、与上次相比的变化、建议措施、依据与适用条件.")
         # JSON mode checks the input messages, not only Responses instructions.
         state = [self._user("Return a JSON object following the system schema.\nInput data:\n"
                             + json.dumps(payload, ensure_ascii=False, allow_nan=False), images)]

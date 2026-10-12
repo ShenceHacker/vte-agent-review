@@ -30,20 +30,45 @@ def digest(value):
 def save(path, value):
     tmp = path.with_suffix("." + uuid4().hex + ".tmp")
     tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(path)
+    for attempt in range(8):
+        try:
+            tmp.replace(path)
+            return
+        except PermissionError:
+            if attempt == 7:
+                raise
+            time.sleep(.05 * (attempt + 1))
 
 
 def load(path, default=None):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return default
+    for attempt in range(8):
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return default
+        except PermissionError:
+            if attempt == 7:
+                raise
+            time.sleep(.05 * (attempt + 1))
+        except (OSError, ValueError):
+            return default
 
 
 def stage_heading(text):
     """Only explicit section markers establish time; no dates are fabricated."""
     s = text.strip().strip("：:")
     s = re.sub(r"^(?:日期|时间|Date|Time)\s*[:：]\s*", "", s, flags=re.I)
+    # Clinical templates often use Chinese numerals in relative visit headings.
+    digits = {c: i for i, c in enumerate("零一二三四五六七八九")}
+    digits["两"] = 2
+    def chinese_number(match):
+        word = match.group(0)
+        if "十" in word:
+            a, b = word.split("十")
+            return str((digits.get(a, 1) if a else 1) * 10 + digits.get(b, 0))
+        return str(digits[word])
+    if re.match(r"^(?:术后|治疗后|随访)", s):
+        s = re.sub(r"[一二三四五六七八九两]?十[一二三四五六七八九]?|[一二三四五六七八九两]", chinese_number, s)
     relative = re.fullmatch(r"(?:术后|治疗后|随访|after|follow.up)\s*(\d+)\s*(周|星期|月|个月|天|weeks?|months?|days?)\s*[:：]?", s, re.I)
     if relative:
         number, unit = relative.groups()
@@ -367,5 +392,7 @@ class LongitudinalServices:
             item["error"] = str(exc) if isinstance(exc, ValueError) else type(exc).__name__
             emit("failed", error=item["error"])
         finally:
-            save(job.path / "series.json", item)
-            job.close()
+            try:
+                save(job.path / "series.json", item)
+            finally:
+                job.close()

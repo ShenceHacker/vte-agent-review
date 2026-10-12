@@ -27,9 +27,10 @@ def configured_model(llm: dict, timeout: float = 120):
     effort = llm.get("reasoning_effort") or os.environ.get("VTE_REASONING_EFFORT") or None
     max_tokens = llm.get("max_output_tokens", int(os.environ.get("VTE_MAX_OUTPUT_TOKENS", "3000")))
     model = ChatCompletionsModel(base, key, name, role_models=roles, timeout=timeout, api_style=style,
-                                reasoning_effort=effort, max_tokens=max_tokens)
+                                reasoning_effort=effort, max_tokens=max_tokens,
+                                output_language=llm.get("output_language") or os.environ.get("VTE_OUTPUT_LANGUAGE", "en"))
     return model, {"base_url": base, "model": name, "role_models": roles, "api_style": style,
-                   "reasoning_effort": effort, "max_output_tokens": max_tokens, "responses_streaming": style == "responses"}
+                   "reasoning_effort": effort, "max_output_tokens": max_tokens, "responses_streaming": style == "responses", "output_language":llm.get("output_language") or os.environ.get("VTE_OUTPUT_LANGUAGE", "en")}
 
 
 def validate_labels(value):

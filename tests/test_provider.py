@@ -32,6 +32,19 @@ class ProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("JSON", body["messages"][0]["content"])
         self.assertEqual(reply.usage, {"total_tokens": 9})
 
+    async def test_chinese_output_preserves_contract_language(self):
+        seen=[]
+        def handler(request):
+            seen.append(json.loads(request.content))
+            return httpx.Response(200,json={"choices":[{"finish_reason":"stop","message":{"content":"{}"}}]})
+        model=ChatCompletionsModel("https://example.invalid/v1","fake-test-key","test-model",transport=httpx.MockTransport(handler),output_language="zh")
+        try:await model.complete("synthesize","D",{})
+        finally:await model.close()
+        prompt=seen[0]["messages"][0]["content"]
+        self.assertIn("Simplified Chinese",prompt)
+        self.assertNotIn("Return a single JSON object in English",prompt)
+        self.assertIn("shared_plan",prompt)
+
     async def test_refusal_truncation_and_malformed_output_fail_closed(self):
         variants = [
             {"finish_reason": "length", "message": {"content": '{}'}},

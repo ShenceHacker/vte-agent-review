@@ -136,7 +136,7 @@ class SourceStore:
                     text = "\n".join("".join(t.text or "" for t in p.findall(".//w:t", ns)) for p in doc.findall(".//w:p", ns))
                     images = []
                     for entry in z.infolist():
-                        if entry.filename.startswith("word/media/"):
+                        if entry.filename.startswith("word/media/") and not entry.is_dir():
                             if len(images) >= 12:
                                 raise ValueError("At most 12 embedded images per document")
                             data = z.read(entry)

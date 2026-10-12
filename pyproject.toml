@@ -22,4 +22,4 @@ vte-review = "vte_review.cli:main"
 include = ["vte_review*"]
 
 [tool.setuptools.package-data]
-vte_review = ["web/*"]
+vte_review = ["web/*", "rating_web/*"]

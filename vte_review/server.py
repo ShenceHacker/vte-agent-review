@@ -344,11 +344,13 @@ class App(WorkspaceServices, LongitudinalServices):
                 effort = llm.get("reasoning_effort") or os.environ.get("VTE_REASONING_EFFORT") or None
                 max_tokens = llm.get("max_output_tokens", int(os.environ.get("VTE_MAX_OUTPUT_TOKENS", "3000")))
                 model = ChatCompletionsModel(base, key, name, role_models=role_models, timeout=settings.call_timeout,
-                                            api_style=api_style, reasoning_effort=effort, max_tokens=max_tokens)
+                                            api_style=api_style, reasoning_effort=effort, max_tokens=max_tokens,
+                                            output_language=llm.get("output_language") or os.environ.get("VTE_OUTPUT_LANGUAGE", "en"))
             except ModuleNotFoundError:
                 raise ValueError('Missing HTTP adapter. Run: python -m pip install -e ".[llm]"') from None
             meta.update(base_url=base, model=name, role_models=role_models, api_style=api_style,
                         reasoning_effort=effort, max_output_tokens=max_tokens,
+                        output_language=llm.get("output_language") or os.environ.get("VTE_OUTPUT_LANGUAGE", "en"),
                         responses_streaming=api_style == "responses")  # never the key
         else:
             raise ValueError("Unknown mode")

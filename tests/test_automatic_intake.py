@@ -14,6 +14,7 @@ from vte_review.demo import DemoModel
 from vte_review.providers import ModelReply
 from vte_review.server import App
 from vte_review.intake import validate_extraction
+from vte_review.vector import VectorStore
 
 
 def observation(source, key="age_years", value=65, **extra):
@@ -49,6 +50,9 @@ class AutomaticIntakeTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.app = App(Path(self.temp.name))
+        # This test exercises intake/workflow, not network model-weight downloads.
+        # Vector retrieval itself has a dedicated isolated test suite.
+        self.app.vectors = VectorStore(Path(self.temp.name), enabled=False)
         self.source = self.app.sources.ingest("case.txt", base64.b64encode(b"Synthetic case: age 65, proximal DVT.").decode())["id"]
         self.case = automatic_case(self.source)
 
