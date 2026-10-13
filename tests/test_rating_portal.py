@@ -142,8 +142,23 @@ class PortalTests(unittest.TestCase):
         self.store.save_rating('doctor@example.com','CASE01-T1',r,0,True)
         row=list(csv.DictReader(io.StringIO(self.store.export('doctor@example.com').decode('utf-8-sig'))))[0]
         self.assertEqual(row['评分标准版本'],VERSION);self.assertEqual(row['诊断与抗凝决策合理性'],'NA');self.assertEqual(row['疗程时间线与动态调整'],'NE');self.assertEqual(row['疗程时间线与动态调整说明'],'Insufficient materials')
+    def test_decimal_scores_survive_save_reload_submit_and_csv(self):
+        r=rating();r['scores'].update(diagnosis=3.5,medication=4.25,timeline=1.5);r['dimension_notes']['timeline']='Synthetic missing timeline detail'
+        self.store.save_rating('doctor@example.com','CASE01-T1',r,0)
+        self.assertEqual(self.store.output('doctor@example.com','CASE01-T1')['rating']['scores'],r['scores'])
+        self.store.save_rating('doctor@example.com','CASE01-T1',r,1,True)
+        row=list(csv.DictReader(io.StringIO(self.store.export('doctor@example.com').decode('utf-8-sig'))))[0]
+        self.assertEqual(row['诊断与抗凝决策合理性'],'3.5');self.assertEqual(row['药物选择与个体化给药'],'4.25');self.assertEqual(row['疗程时间线与动态调整'],'1.5')
+    def test_decimal_low_notes_and_safety_thresholds(self):
+        r=rating();r['scores']['safety']=2.5
+        with self.assertRaises(PortalError):validate_rating(r,True)
+        r['dimension_notes']['safety']='Synthetic deficiency';validate_rating(r,True)
+        r.update(critical_error='yes',overall='major',safety_events=[safety_event()])
+        with self.assertRaises(PortalError):validate_rating(r,True)
+        r['scores']['safety']=1.5;validate_rating(r,True)
+        r['scores']['safety']=2.5;r['safety_score_explanation']='Explanation for adjudication';validate_rating(r,True)
     def test_invalid_scores_and_low_score_comment(self):
-        for v in [0,6,True,3.5]:
+        for v in [0,6,True,False,0.9,5.01,float('nan'),float('inf'),float('-inf'),'4.5']:
             r=rating();r['scores']['safety']=v
             with self.assertRaises(PortalError):validate_rating(r,True)
         r=rating();r['scores']['safety']=1

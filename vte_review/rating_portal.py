@@ -193,15 +193,23 @@ class Store:
                 w.writerow([("'"+str(v)) if str(v).lstrip('\ufeff \t\r\n').startswith(('=','+','-','@')) else v for v in values])
         return ('\ufeff'+buf.getvalue()).encode('utf-8')
 
+def numeric_score(value):
+    return type(value) in (int,float) and 1<=value<=5
+
+
+def low_safety_score(value):
+    return numeric_score(value) and value<=2
+
+
 def needs_adjudication(p):
-    return p.get('critical_error')=='uncertain' or (any(e.get('severity')=='major' for e in p.get('safety_events',[])) and p.get('scores',{}).get('safety') not in (1,2))
+    return p.get('critical_error')=='uncertain' or (any(e.get('severity')=='major' for e in p.get('safety_events',[])) and not low_safety_score(p.get('scores',{}).get('safety')))
 
 
 def validate_rating(p,submit=False):
     allowed={'scores','dimension_notes','critical_error','overall','safety_events','safety_score_explanation','minimum_change','comment','active_seconds'}
     if not isinstance(p,dict) or set(p)-allowed:raise PortalError(400,'评分字段无效，请刷新R2页面。')
     scores=p.get('scores',{});keys={k for k,*_ in DIMENSIONS}
-    if not isinstance(scores,dict) or set(scores)-keys or any(not (v in ('NA','NE') or type(v) is int and 1<=v<=5) for v in scores.values()):raise PortalError(400,'评分应为1–5、NA或NE。')
+    if not isinstance(scores,dict) or set(scores)-keys or any(not (v in ('NA','NE') or numeric_score(v)) for v in scores.values()):raise PortalError(400,'评分应为1–5之间的数字（可含小数）、NA或NE。')
     def valid_text(value):return isinstance(value,str) and len(value)<=2000
     for k in ['comment','minimum_change','safety_score_explanation']:
         if not valid_text(p.get(k,'')):raise PortalError(400,'说明须为文字且不超过2000字。')
@@ -228,14 +236,14 @@ def validate_rating(p,submit=False):
         if set(scores)!=keys or not p.get('overall') or not p.get('critical_error'):raise PortalError(400,'请完成7项评分、总体判断和安全错误判断。')
         for key,label,*_ in DIMENSIONS:
             v=scores[key]
-            if (v in ('NA','NE') or type(v) is int and v<=3) and not notes.get(key,'').strip():raise PortalError(400,f'请说明“{label}”的欠缺或NA/NE理由。')
+            if (v in ('NA','NE') or numeric_score(v) and v<=3) and not notes.get(key,'').strip():raise PortalError(400,f'请说明“{label}”的欠缺或NA/NE理由。')
         if p['overall'] in ('minor','major','reject') and not p.get('minimum_change','').strip():raise PortalError(400,'请用一句话填写最小必要修改。')
         if (p['overall']=='unable' or p['critical_error']=='uncertain') and not p.get('comment','').strip():raise PortalError(400,'请说明无法判断的原因。')
         if p['critical_error']=='yes':
             if not events:raise PortalError(400,'请至少记录一个安全关键错误事件。')
             if p['overall'] in ('accept','minor'):raise PortalError(400,'确认安全关键错误时，总体不能评为无需实质修改或小幅修改后可用。')
         elif events:raise PortalError(400,'已记录安全错误事件，请确认“有”，或移除事件并说明无法判断的原因。')
-        if any(e['severity']=='major' for e in events) and scores['safety'] not in (1,2) and not p.get('safety_score_explanation','').strip():raise PortalError(400,'重大安全错误与安全维度评分不一致，请说明理由，提交后标记待仲裁。')
+        if any(e['severity']=='major' for e in events) and not low_safety_score(scores['safety']) and not p.get('safety_score_explanation','').strip():raise PortalError(400,'重大安全错误与安全维度评分不一致，请说明理由，提交后标记待仲裁。')
 
 def smtp_mailer(config):
     def send(email,code):
