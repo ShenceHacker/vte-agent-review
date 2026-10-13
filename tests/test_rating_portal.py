@@ -1,10 +1,10 @@
-import base64,io,json,tempfile,threading,unittest,zipfile
+import base64,csv,io,json,tempfile,threading,unittest,zipfile
 from pathlib import Path
 from urllib.request import Request,urlopen
 from urllib.error import HTTPError
 from http.server import ThreadingHTTPServer
 from vte_review.rating_portal import Store,PortalError,handler,validate_rating
-from vte_review.rating_rubric import DIMENSIONS
+from vte_review.rating_rubric import DIMENSIONS,VERSION
 from vte_review.dataset import docx_identity,collect
 from vte_review.intake import SourceStore
 from vte_review.longitudinal import stage_heading
@@ -15,7 +15,9 @@ def bundle():
        'model':'HIDDEN MODEL','reference':{'text':'HIDDEN REFERENCE','images':[{'id':'a'*64+'.png'}]}},
       {'id':'CASE01-T2','case_id':'CASE01','position':1,'label':'随访','context':'FUTURE FACT','answer':'FUTURE ANSWER','images':[],'reference':{'text':'FUTURE GOLD','images':[]}}]}]}
 
-def rating():return {'scores':{k:4 for k,*_ in DIMENSIONS},'critical_error':'no','overall':'minor','error_types':[],'comment':'','active_seconds':12}
+def rating():return {'scores':{k:4 for k,*_ in DIMENSIONS},'critical_error':'no','overall':'minor','minimum_change':'Clarify follow-up details (synthetic).','dimension_notes':{},'safety_events':[],'comment':'','active_seconds':12}
+
+def safety_event():return {'id':'synthetic-event-1','category':'regimen','severity':'major','consequences':['bleeding'],'dimensions':['medication','safety'],'problem':'Synthetic erroneous instruction','case_evidence':'Synthetic case evidence','clinical_rule':'Synthetic reference rule','potential_consequence':'Synthetic potential bleeding consequence'}
 
 class PortalTests(unittest.TestCase):
     def setUp(self):
@@ -93,10 +95,53 @@ class PortalTests(unittest.TestCase):
     def test_required_safety_and_na_explanations(self):
         r=rating();r['critical_error']='yes'
         with self.assertRaises(PortalError):validate_rating(r,True)
-        r.update(potential_harm='major',error_types=['wrong_drug'],comment='Wrong drug');validate_rating(r,True)
-        r=rating();r['scores']['diagnosis']='NA'
+        r.update(safety_events=[safety_event()],overall='major');r['scores']['safety']=2;r['dimension_notes']['safety']='Synthetic risk';validate_rating(r,True)
+        for value in ['NA','NE']:
+            r=rating();r['scores']['diagnosis']=value
+            with self.assertRaises(PortalError):validate_rating(r,True)
+            r['dimension_notes']['diagnosis']='Reason specific to this dimension';validate_rating(r,True)
+    def test_each_low_score_needs_its_own_note(self):
+        for score in [1,2,3]:
+            r=rating();r['scores']['diagnosis']=score;r['comment']='General comment'
+            with self.assertRaises(PortalError):validate_rating(r,True)
+            r['dimension_notes']['diagnosis']='Specific deficiency';validate_rating(r,True)
+    def test_critical_error_cannot_be_accepted_and_mismatch_needs_reason(self):
+        r=rating();r.update(critical_error='yes',safety_events=[safety_event()],safety_score_explanation='Needs adjudication')
+        for overall in ['accept','minor']:
+            r['overall']=overall
+            with self.assertRaises(PortalError):validate_rating(r,True)
+        r['overall']='major';r.pop('safety_score_explanation')
         with self.assertRaises(PortalError):validate_rating(r,True)
-        r['na_reason']='Insufficient supporting data';validate_rating(r,True)
+        r['safety_score_explanation']='Explanation for adjudication';validate_rating(r,True)
+        self.store.save_rating('doctor@example.com','CASE01-T1',r,0,True)
+        row=list(csv.DictReader(io.StringIO(self.store.export('doctor@example.com').decode('utf-8-sig'))))[0]
+        self.assertEqual(row['待仲裁'],'是');self.assertEqual(row['安全错误事件数'],'1')
+        self.assertEqual(json.loads(row['安全错误事件_JSON'])[0]['id'],'synthetic-event-1')
+    def test_event_evidence_completeness_and_duplicate_ids(self):
+        r=rating();r.update(critical_error='yes',overall='major',safety_events=[safety_event()],safety_score_explanation='Explain')
+        for key in ['case_evidence','clinical_rule','potential_consequence','problem','category','severity','consequences','dimensions']:
+            changed=json.loads(json.dumps(r));changed['safety_events'][0].pop(key)
+            validate_rating(changed,False)
+            with self.assertRaises(PortalError):validate_rating(changed,True)
+        r['safety_events'].append(safety_event())
+        with self.assertRaises(PortalError):validate_rating(r,False)
+    def test_uncertain_is_not_forced_into_an_error_event(self):
+        r=rating();r.update(critical_error='uncertain',overall='unable')
+        with self.assertRaises(PortalError):validate_rating(r,True)
+        r['comment']='Missing review materials';validate_rating(r,True)
+    def test_no_error_cannot_contain_confirmed_event(self):
+        r=rating();r['safety_events']=[safety_event()]
+        with self.assertRaises(PortalError):validate_rating(r,True)
+    def test_version_guard_prevents_old_browser_writes(self):
+        for version in [None,'VTE-R1-2026-10-12']:
+            with self.assertRaises(PortalError) as e:self.store.save_rating('doctor@example.com','CASE01-T1',rating(),0,True,version)
+            self.assertEqual(e.exception.status,409)
+        with self.store.db() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM ratings').fetchone()[0],0)
+    def test_r2_csv_preserves_na_ne_and_notes(self):
+        r=rating();r['scores'].update(diagnosis='NA',timeline='NE');r['dimension_notes'].update(diagnosis='Not applicable',timeline='Insufficient materials')
+        self.store.save_rating('doctor@example.com','CASE01-T1',r,0,True)
+        row=list(csv.DictReader(io.StringIO(self.store.export('doctor@example.com').decode('utf-8-sig'))))[0]
+        self.assertEqual(row['评分标准版本'],VERSION);self.assertEqual(row['诊断与抗凝决策合理性'],'NA');self.assertEqual(row['疗程时间线与动态调整'],'NE');self.assertEqual(row['疗程时间线与动态调整说明'],'Insufficient materials')
     def test_invalid_scores_and_low_score_comment(self):
         for v in [0,6,True,3.5]:
             r=rating();r['scores']['safety']=v
@@ -124,7 +169,12 @@ class PortalTests(unittest.TestCase):
             h.update({'Content-Type':'application/json','Origin':'https://untrusted.example'})
             self.assertEqual(get('api/auth/logout',h,{})[0],403)
             h['Origin']=origin;self.assertEqual(get('api/auth/logout',h,{})[0],403)
-            h['X-CSRF-Token']=who['csrf'];self.assertEqual(get('api/auth/logout',h,{})[0],200)
+            h['X-CSRF-Token']=who['csrf']
+            body={'rating':rating(),'revision':0,'submit':True}
+            self.assertEqual(get('api/outputs/CASE01-T1/ratings',h,body)[0],409)
+            body['rubric_version']=VERSION
+            self.assertEqual(get('api/outputs/CASE01-T1/ratings',h,body)[0],200)
+            self.assertEqual(get('api/auth/logout',h,{})[0],200)
             self.assertEqual(get('api/cases',h)[0],401)
         finally:srv.shutdown();srv.server_close();thread.join()
 

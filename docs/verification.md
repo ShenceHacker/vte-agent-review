@@ -113,3 +113,14 @@
 - 123 tests pass, including 5 new regression tests for structured notes, container variants/limits, unchanged observation boundaries, retained raw output, and failed-response diagnosis. No real patient model call was made for this fix.
 - Streaming remains unchanged: the Responses adapter requests stream=true and consumes SSE until response.completed; partial text is not exposed as a validated answer. The browser receives workflow events over SSE, while intake currently waits for its full JSON response. Chat Completions uses a non-streaming request.
 - Final local service is 127.0.0.1:8772 (v0.6.1, prompt 2026-10-05.en.v6). The existing browser draft and source attachment were transferred through the case JSON UI so the physician can retry without uploading the Word file again.
+
+
+## 2026-10-13：评分站R2直接替换
+
+- Python完整测试174项通过；包含R2逐项1–3分/NA/NE理由、安全事件完整性和唯一ID、关键错误与总体判断冲突、严重度/安全评分不一致仲裁、CSV导出、旧版本请求拒绝及既有访问隔离/时间线/提交锁定。
+- JavaScript语法检查通过。浏览器使用隔离的合成病例和本地验证码捕获器，未发送真实邮件或填写真实临床评分。
+- 浏览器确认七维标签、按需展开、NA/NE及理由保存后刷新恢复、提交解锁下一随访、重度安全事件字段、冲突提示和提交后完整锁定回看；无控制台JavaScript错误。截图位于忽略目录 `runs/rating-portal-r2-qa/`。
+- R2仍为待医生试评校准的研究草案。本次是软件验证，不是临床有效性验证。
+
+- FE部署完成：`/opt/vte-review/releases/20261013T064703`；服务active，公网首页/health为200，未登录病例接口401。本机HTTPS health也返回 `VTE-R2-2026-10-13`，此前本机超时本轮未复现。
+- 切换前只有一份由页面浏览计时生成的R1空草稿，无分数、意见或提交；备份后重置为R2空草稿。原30病例/107输出聚合内容哈希前后均为 `f027740e7520c8af1d93bbd3257584ba59760f9208630cefcb8174bb31abb5d1`。线上评分代码、前端与本地SHA256一致。

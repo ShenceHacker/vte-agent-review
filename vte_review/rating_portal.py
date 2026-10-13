@@ -8,7 +8,7 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse,unquote
-from .rating_rubric import VERSION,DIMENSIONS,ERRORS,OVERALL,rubric
+from .rating_rubric import VERSION,DIMENSIONS,ERRORS,OVERALL,CONSEQUENCES,SEVERITY,rubric
 
 WEB=Path(__file__).with_name('rating_web')
 EMAIL=re.compile(r'^[A-Za-z0-9.!#$%&\x27*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$')
@@ -148,6 +148,7 @@ class Store:
             unfinished=c.execute("SELECT COUNT(*) FROM outputs o LEFT JOIN ratings r ON r.output_id=o.id AND r.email=? WHERE o.case_id=? AND o.position<? AND COALESCE(r.status,'')!='submitted'",(email,row['case_id'],row['position'])).fetchone()[0]
             if unfinished:raise PortalError(403,'请先完成此前时间点的评分。')
             rating=c.execute('SELECT * FROM ratings WHERE email=? AND output_id=?',(email,oid)).fetchone()
+            if rating and rating['rubric_version']!=VERSION:raise PortalError(409,'评分标准已更新，请联系研究管理员处理旧草稿。')
             if not rating:
                 c.execute('INSERT OR IGNORE INTO ratings VALUES(?,?,?,?,?,?,?,?,?,NULL)',(email,oid,row['content_hash'],VERSION,'{}','draft',0,self.clock(),self.clock()))
                 rating=c.execute('SELECT * FROM ratings WHERE email=? AND output_id=?',(email,oid)).fetchone()
@@ -159,7 +160,8 @@ class Store:
         data.update(content_hash=row['content_hash'],rubric_version=VERSION,rating=json.loads(rating['payload']),rating_status=rating['status'],revision=rating['revision'])
         return data
 
-    def save_rating(self,email,oid,payload,revision,submit=False):
+    def save_rating(self,email,oid,payload,revision,submit=False,rubric_version=VERSION):
+        if rubric_version!=VERSION:raise PortalError(409,'评分标准已更新为R2，请刷新页面后重新评分。')
         output=self.output(email,oid);validate_rating(payload,submit)
         if type(revision) is not int:raise PortalError(400,'评分版本无效。')
         with self.db() as c:
@@ -183,29 +185,57 @@ class Store:
 
     def export(self,email):
         buf=io.StringIO();w=csv.writer(buf);keys=[k for k,*_ in DIMENSIONS]
-        w.writerow(['病例编号','时间点ID','评分标准版本','回答哈希',*[d[1] for d in DIMENSIONS],'安全关键错误','潜在严重度','总体可接受性','问题类型','评审意见','无法评估原因','页面活跃秒数','提交时间_北京时间'])
+        w.writerow(['病例编号','时间点ID','评分标准版本','回答哈希',*[d[1] for d in DIMENSIONS],*[d[1]+'说明' for d in DIMENSIONS],'安全关键错误','安全错误事件数','安全错误事件_JSON','安全评分不一致说明','待仲裁','总体可接受性','最小必要修改','评审意见','页面活跃秒数','提交时间_北京时间'])
         with self.db() as c:
-            for r in c.execute("SELECT r.*,o.case_id FROM ratings r JOIN outputs o ON o.id=r.output_id WHERE r.email=? AND r.status='submitted' ORDER BY o.case_id,o.position",(email,)):
-                p=json.loads(r['payload']);values=[r['case_id'],r['output_id'],r['rubric_version'],r['content_hash'],*[p['scores'].get(k,'NA') for k in keys],{'yes':'有','no':'未发现','uncertain':'不确定'}[p['critical_error']],{'minor':'轻微','moderate':'中度','major':'严重','life_threatening':'危及生命','uncertain':'不确定'}.get(p.get('potential_harm'),''),OVERALL[p['overall']],';'.join(ERRORS[e] for e in p.get('error_types',[])),p.get('comment',''),p.get('na_reason',''),p.get('active_seconds',0),datetime.fromtimestamp(r['submitted_at'],timezone(timedelta(hours=8))).isoformat()]
+            for r in c.execute("SELECT r.*,o.case_id FROM ratings r JOIN outputs o ON o.id=r.output_id WHERE r.email=? AND r.status='submitted' AND r.rubric_version=? ORDER BY o.case_id,o.position",(email,VERSION)):
+                p=json.loads(r['payload']);events=[{**e,'category':ERRORS[e['category']],'severity':SEVERITY[e['severity']],'consequences':[CONSEQUENCES[x] for x in e['consequences']]} for e in p.get('safety_events',[])]
+                values=[r['case_id'],r['output_id'],r['rubric_version'],r['content_hash'],*[p['scores'][k] for k in keys],*[p.get('dimension_notes',{}).get(k,'') for k in keys],{'yes':'有','no':'未发现','uncertain':'无法判断'}[p['critical_error']],len(events),json.dumps(events,ensure_ascii=False),p.get('safety_score_explanation',''),'是' if needs_adjudication(p) else '否',OVERALL[p['overall']],p.get('minimum_change',''),p.get('comment',''),p.get('active_seconds',0),datetime.fromtimestamp(r['submitted_at'],timezone(timedelta(hours=8))).isoformat()]
                 w.writerow([("'"+str(v)) if str(v).lstrip('\ufeff \t\r\n').startswith(('=','+','-','@')) else v for v in values])
         return ('\ufeff'+buf.getvalue()).encode('utf-8')
 
+def needs_adjudication(p):
+    return p.get('critical_error')=='uncertain' or (any(e.get('severity')=='major' for e in p.get('safety_events',[])) and p.get('scores',{}).get('safety') not in (1,2))
+
+
 def validate_rating(p,submit=False):
-    if not isinstance(p,dict) or set(p)-{'scores','critical_error','potential_harm','overall','error_types','comment','na_reason','active_seconds'}:raise PortalError(400,'评分字段无效。')
+    allowed={'scores','dimension_notes','critical_error','overall','safety_events','safety_score_explanation','minimum_change','comment','active_seconds'}
+    if not isinstance(p,dict) or set(p)-allowed:raise PortalError(400,'评分字段无效，请刷新R2页面。')
     scores=p.get('scores',{});keys={k for k,*_ in DIMENSIONS}
-    if not isinstance(scores,dict) or set(scores)-keys or any(not (v=='NA' or type(v) is int and 1<=v<=5) for v in scores.values()):raise PortalError(400,'评分应为1–5或N/A。')
-    for k in ['comment','na_reason']:
-        if not isinstance(p.get(k,''),str) or len(p.get(k,''))>4000:raise PortalError(400,'说明过长。')
-    errors=p.get('error_types',[])
-    if not isinstance(errors,list) or any(e not in ERRORS for e in errors) or len(errors)>len(ERRORS):raise PortalError(400,'错误类别无效。')
-    if p.get('critical_error') not in {None,'yes','no','uncertain'} or p.get('potential_harm') not in {None,'none','minor','moderate','major','life_threatening','uncertain'} or p.get('overall') not in {None,*OVERALL}:raise PortalError(400,'选择项无效。')
+    if not isinstance(scores,dict) or set(scores)-keys or any(not (v in ('NA','NE') or type(v) is int and 1<=v<=5) for v in scores.values()):raise PortalError(400,'评分应为1–5、NA或NE。')
+    def valid_text(value):return isinstance(value,str) and len(value)<=2000
+    for k in ['comment','minimum_change','safety_score_explanation']:
+        if not valid_text(p.get(k,'')):raise PortalError(400,'说明须为文字且不超过2000字。')
+    notes=p.get('dimension_notes',{})
+    if not isinstance(notes,dict) or set(notes)-keys or not all(valid_text(v) for v in notes.values()):raise PortalError(400,'逐项说明无效。')
+    if p.get('critical_error') not in (None,'yes','no','uncertain') or p.get('overall') not in (None,*OVERALL):raise PortalError(400,'选择项无效。')
     seconds=p.get('active_seconds',0)
     if type(seconds) not in (float,int) or not 0<=seconds<=86400:raise PortalError(400,'计时无效。')
+    events=p.get('safety_events',[]);ids=set()
+    if not isinstance(events,list) or len(events)>20:raise PortalError(400,'安全事件最多20项。')
+    for e in events:
+        fields={'id','category','severity','consequences','dimensions','problem','case_evidence','clinical_rule','potential_consequence'}
+        if not isinstance(e,dict) or set(e)-fields or not isinstance(e.get('id'),str) or not ID.fullmatch(e['id']) or e['id'] in ids:raise PortalError(400,'安全事件编号无效或重复。')
+        ids.add(e['id'])
+        for field,choices in [('category',ERRORS),('severity',SEVERITY)]:
+            if e.get(field) not in ('',None,*choices):raise PortalError(400,'安全事件类别或严重度无效。')
+        for field,choices in [('dimensions',keys),('consequences',CONSEQUENCES)]:
+            values=e.get(field,[])
+            if not isinstance(values,list) or any(not isinstance(v,str) or v not in choices for v in values) or len(set(values))!=len(values):raise PortalError(400,'安全事件关联项无效。')
+        for field in ['problem','case_evidence','clinical_rule','potential_consequence']:
+            if not valid_text(e.get(field,'')):raise PortalError(400,'安全事件说明过长或格式无效。')
+        if submit and (not e.get('category') or not e.get('severity') or not e.get('consequences') or not e.get('dimensions') or any(not e.get(k,'').strip() for k in ['problem','case_evidence','clinical_rule','potential_consequence'])):raise PortalError(400,'请补全每个安全事件的原文/遗漏、病例证据、临床规则、后果、严重度及关联维度。')
     if submit:
         if set(scores)!=keys or not p.get('overall') or not p.get('critical_error'):raise PortalError(400,'请完成7项评分、总体判断和安全错误判断。')
-        if 'NA' in scores.values() and not p.get('na_reason','').strip():raise PortalError(400,'请说明无法评估的原因。')
-        if p['critical_error'] in {'yes','uncertain'} and (not errors or not p.get('comment','').strip() or p.get('potential_harm') in {None,'none'}):raise PortalError(400,'请标记问题类型、潜在严重度，并简述安全问题。')
-        if any(type(v) is int and v<=2 for v in scores.values()) and not p.get('comment','').strip():raise PortalError(400,'存在1–2分项目，请简述主要问题。')
+        for key,label,*_ in DIMENSIONS:
+            v=scores[key]
+            if (v in ('NA','NE') or type(v) is int and v<=3) and not notes.get(key,'').strip():raise PortalError(400,f'请说明“{label}”的欠缺或NA/NE理由。')
+        if p['overall'] in ('minor','major','reject') and not p.get('minimum_change','').strip():raise PortalError(400,'请用一句话填写最小必要修改。')
+        if (p['overall']=='unable' or p['critical_error']=='uncertain') and not p.get('comment','').strip():raise PortalError(400,'请说明无法判断的原因。')
+        if p['critical_error']=='yes':
+            if not events:raise PortalError(400,'请至少记录一个安全关键错误事件。')
+            if p['overall'] in ('accept','minor'):raise PortalError(400,'确认安全关键错误时，总体不能评为无需实质修改或小幅修改后可用。')
+        elif events:raise PortalError(400,'已记录安全错误事件，请确认“有”，或移除事件并说明无法判断的原因。')
+        if any(e['severity']=='major' for e in events) and scores['safety'] not in (1,2) and not p.get('safety_score_explanation','').strip():raise PortalError(400,'重大安全错误与安全维度评分不一致，请说明理由，提交后标记待仲裁。')
 
 def smtp_mailer(config):
     def send(email,code):
@@ -248,7 +278,7 @@ def handler(store,origin,prefix):
                 if path in {'/','/portal.js','/portal.css','/logo.svg'}:
                     f=WEB/('index.html' if path=='/' else path[1:]);types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml'}
                     self.headers_out(200,types[f.suffix]);self.wfile.write(f.read_bytes());return
-                if path=='/api/health':self.json({'status':'ok'});return
+                if path=='/api/health':self.json({'status':'ok','rubric_version':VERSION});return
                 who=store.session(self.token());email=who['email']
                 if path=='/api/me':self.json({'email':email,'csrf':who['csrf']});return
                 if path=='/api/rubric':self.json(rubric());return
@@ -274,7 +304,7 @@ def handler(store,origin,prefix):
                 if self.headers.get('Origin')!=origin:raise PortalError(403,'请求来源无效。')
                 if self.headers.get('Content-Type','').split(';')[0]!='application/json':raise PortalError(415,'需要JSON请求。')
                 length=int(self.headers.get('Content-Length','0'))
-                if not 0<length<=32000:raise PortalError(413,'请求过大。')
+                if not 0<length<=60000:raise PortalError(413,'请求过大，请精简说明。')
                 body=json.loads(self.rfile.read(length))
                 if not isinstance(body,dict):raise PortalError(400,'请求格式无效。')
                 ip=self.headers.get('X-Real-IP',self.client_address[0]) if self.client_address[0] in {'127.0.0.1','::1'} else self.client_address[0]
@@ -285,7 +315,7 @@ def handler(store,origin,prefix):
                 if not hmac.compare_digest(self.headers.get('X-CSRF-Token',''),who['csrf']):raise PortalError(403,'请求验证失败，请刷新。')
                 if path=='/api/auth/logout':store.logout(self.token());self.json({'ok':True},cookie=self.cookie('',True));return
                 m=re.fullmatch(r'/api/outputs/([A-Za-z0-9_-]+)/ratings',path)
-                if m:self.json(store.save_rating(who['email'],m[1],body.get('rating'),body.get('revision'),body.get('submit') is True));return
+                if m:self.json(store.save_rating(who['email'],m[1],body.get('rating'),body.get('revision'),body.get('submit') is True,body.get('rubric_version')));return
                 raise PortalError(404,'操作不存在。')
             except PortalError as e:self.json({'error':e.message},e.status)
             except (ValueError,TypeError,json.JSONDecodeError):self.json({'error':'请求格式无效。'},400)
