@@ -129,8 +129,9 @@ class ComparisonTests(unittest.TestCase):
                      patch.object(runner, 'run', new=AsyncMock()), \
                      patch.object(runner, 'summary', return_value=state), \
                      patch.object(runner, 'export_and_verify', return_value={'verified': True}), \
-                     patch.object(runner.time, 'monotonic', side_effect=[0, 100000]), \
+                     patch.object(runner, 'time') as clock, \
                      patch('builtins.print'):
+                    clock.monotonic.side_effect = [0, 100000]
                     self.assertEqual(runner.main(), code)
                 self.assertEqual(load(Path(d)/'final-status.json')['status'], expected)
 
