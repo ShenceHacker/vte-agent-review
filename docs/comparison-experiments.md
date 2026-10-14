@@ -1,5 +1,12 @@
 # Manuscript comparison generation
 
+User-facing experiment records for this VTE project are always HTML (preference
+confirmed 2026-10-14); manuscript results remain tables. The main local reading
+entry is `data/vte_dataset/实验记录.html`, covering progress, configuration,
+verification, retries and links to full answers and historical experiments.
+Raw JSON/JSONL/CSV files remain reproducibility data, not the required reading
+interface. The runner updates this HTML entry alongside progress and final status.
+
 The four configurations are `baseline`, `rag`, `synthesis`, and `reviewed`.
 The manuscript's third and fourth groups are paired stages of the existing
 multi-role workflow. `synthesis` is copied verbatim from its first

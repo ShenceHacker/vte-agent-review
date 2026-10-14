@@ -13,6 +13,7 @@ from scripts.serve_fe import configure_fe
 from vte_review.comparison import VERSION, PROMPT, discover, prepare, run_one, digest, export_and_verify
 from vte_review.longitudinal import load, save
 from vte_review.providers import ChatCompletionsModel
+from vte_review.experiment_html import write_experiment_html
 
 
 def summary(out):
@@ -24,6 +25,7 @@ def summary(out):
         result['methods'][method] = {'completed': len(outputs), 'pending': len(nodes)-len(outputs),
                                     'unknown_citations': sum(bool(o.get('unknown_citation_ids')) for o in outputs)}
     save(out/'progress.json', result)
+    write_experiment_html(out)
     return result
 
 
@@ -83,6 +85,7 @@ def main():
         print('COMPARISON_BATCH_FINISHED', json.dumps(summary(args.out)), flush=True)
     if args.verify:
         print(json.dumps(export_and_verify(args.out)), flush=True)
+        write_experiment_html(args.out)
     if args.follow_target:
         deadline = time.monotonic() + args.wait_minutes*60
         while True:
@@ -94,6 +97,7 @@ def main():
                          'target_nodes': args.follow_target, 'progress': state,
                          'verification': export_and_verify(args.out)}
                 save(args.out/'final-status.json', final)
+                write_experiment_html(args.out)
                 print('COMPARISON_FINAL', json.dumps(final), flush=True)
                 return 0 if complete else 2
             time.sleep(30)

@@ -128,6 +128,7 @@ class ComparisonTests(unittest.TestCase):
                      patch.object(runner, 'discover', return_value=[]), \
                      patch.object(runner, 'run', new=AsyncMock()), \
                      patch.object(runner, 'summary', return_value=state), \
+                     patch.object(runner, 'write_experiment_html'), \
                      patch.object(runner, 'export_and_verify', return_value={'verified': True}), \
                      patch.object(runner, 'time') as clock, \
                      patch('builtins.print'):
