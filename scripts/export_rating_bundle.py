@@ -5,6 +5,7 @@ from PIL import Image
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 from vte_review.dataset import write_json,processing_directory
 from vte_review.longitudinal import load
+from vte_review.rating_rubric import VERSION
 DATA=ROOT/'data/vte_dataset';DEST=DATA/'portal';ASSETS=DEST/'assets'
 
 def image_asset(path,label):
@@ -87,7 +88,7 @@ def export():
             for i,sid in enumerate(input_blocks[1]['images']):
                 baseline['images'].append(image_asset(source/'workspace/sources'/sid/'source.bin','初始资料图 '+str(i+1)))
         cases.append({'id':cid,'demographics':' · '.join(basic),'timepoints':record.get('timepoints',len(gold)),'baseline':baseline,'outputs':items})
-    bundle={'schema_version':1,'study':'VTE-R1','cases':cases};write_json(DEST/'bundle.json',bundle)
+    bundle={'schema_version':1,'study':'VTE','rubric_version':VERSION,'cases':cases};write_json(DEST/'bundle.json',bundle)
     write_json(DATA/'portal-export-audit.json',audit)
     print(json.dumps({'cases':len(cases),'outputs':sum(len(c['outputs']) for c in cases),'assets':len(list(ASSETS.glob('*.png')))},ensure_ascii=False))
 
