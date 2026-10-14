@@ -59,6 +59,78 @@ class PortalTests(unittest.TestCase):
     def test_log_out(self):
         token,_=self.login();self.store.logout(token)
         with self.assertRaises(PortalError):self.store.session(token)
+    def test_password_accounts_are_salted_and_isolated(self):
+        password='synthetic-review-password'
+        for username in ['doctor1','doctor2']:self.store.create_account(username,password)
+        token,who=self.store.password_login('DOCTOR1',password,'test-ip')
+        self.assertEqual(who['email'],'doctor1');self.assertEqual(self.store.session(token)['email'],'doctor1')
+        with self.store.db() as c:rows=c.execute('SELECT salt,password_hash FROM accounts ORDER BY username').fetchall()
+        self.assertNotEqual(rows[0]['salt'],rows[1]['salt']);self.assertNotEqual(rows[0]['password_hash'],rows[1]['password_hash'])
+        self.assertNotIn(password,str([tuple(r) for r in rows]))
+        r=rating();r['scores']['diagnosis']=4.25
+        self.store.save_rating('doctor1','CASE01-T1',r,0,True)
+        self.assertEqual(self.store.output('doctor2','CASE01-T1')['rating'],{})
+        self.assertNotIn('4.25',self.store.export('doctor2').decode('utf-8'))
+        self.assertEqual(self.store.list_methods('doctor1')[-1]['done'],1)
+        self.assertEqual(self.store.list_methods('doctor2')[-1]['done'],0)
+        self.store.preview('doctor1','CASE01')
+    def test_password_disabled_account_revokes_session_and_login_is_limited(self):
+        self.store.create_account('doctor1','synthetic-review-password')
+        token,_=self.store.password_login('doctor1','synthetic-review-password','test-ip')
+        with self.store.db() as c:c.execute("UPDATE accounts SET enabled=0 WHERE username='doctor1'")
+        with self.assertRaises(PortalError):self.store.session(token)
+        with self.assertRaises(PortalError):self.store.password_login('doctor1','synthetic-review-password','test-ip')
+        for _ in range(8):
+            with self.assertRaises(PortalError) as error:self.store.password_login('doctor1','wrong','test-ip')
+            self.assertEqual(error.exception.status,401)
+        with self.assertRaises(PortalError) as error:self.store.password_login('doctor1','wrong','test-ip')
+        self.assertEqual(error.exception.status,429)
+    def test_unknown_password_account_and_bad_input_are_generic(self):
+        for username,password in [('missing','anything'),('doctor1',None),('invalid name','anything')]:
+            with self.assertRaises(PortalError) as error:self.store.password_login(username,password,'test-ip')
+            self.assertEqual(error.exception.status,401)
+        with self.store.db() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM sessions').fetchone()[0],0)
+    def baseline_bundle(self):
+        b=bundle();b['method_id']='baseline'
+        for o in b['cases'][0]['outputs']:o['id']='BASE-'+o['id'];o['answer']='SYNTHETIC BASELINE '+o['answer']
+        return b
+    def test_method_groups_do_not_duplicate_missing_reports(self):
+        groups=self.store.list_methods('doctor@example.com')
+        self.assertEqual([g['total'] for g in groups],[0,0,0,2])
+        self.assertEqual(self.store.list_cases('doctor@example.com','baseline')[0]['outputs'],[])
+        with self.assertRaises(PortalError):self.store.list_cases('doctor@example.com','unknown')
+    def test_method_ratings_timeline_and_exports_are_separate(self):
+        self.store.import_bundle(self.baseline_bundle())
+        self.store.save_rating('doctor@example.com','CASE01-T1',rating(),0,True)
+        self.store.output('doctor@example.com','CASE01-T2')
+        with self.assertRaises(PortalError):self.store.output('doctor@example.com','BASE-CASE01-T2')
+        base=self.store.output('doctor@example.com','BASE-CASE01-T1')
+        self.assertEqual(base['rating'],{});self.assertEqual(base['method_id'],'baseline');self.assertNotIn('reference',base)
+        self.assertEqual(self.store.list_cases('doctor@example.com','baseline')[0]['done'],0)
+        self.store.save_rating('doctor@example.com','BASE-CASE01-T1',rating(),0,True)
+        for method,oid in [('baseline','BASE-CASE01-T1'),('reviewed','CASE01-T1')]:
+            rows=list(csv.DictReader(io.StringIO(self.store.export('doctor@example.com',method).decode('utf-8-sig'))))
+            self.assertEqual(len(rows),1);self.assertEqual(rows[0]['方法编号'],method);self.assertEqual(rows[0]['时间点ID'],oid)
+        self.assertEqual(len(list(csv.DictReader(io.StringIO(self.store.export('doctor@example.com').decode('utf-8-sig'))))),2)
+    def test_published_output_cannot_change_method(self):
+        b=bundle();b['method_id']='baseline'
+        with self.assertRaises(ValueError):self.store.import_bundle(b)
+    def test_method_schema_migration_preserves_outputs_and_ratings(self):
+        self.store.save_rating('doctor@example.com','CASE01-T1',rating(),0,True)
+        with self.store.db() as c:
+            original_outputs=[tuple(r) for r in c.execute('SELECT id,case_id,position,content_hash,payload FROM outputs ORDER BY id')]
+            original_ratings=[tuple(r) for r in c.execute('SELECT * FROM ratings')]
+            c.executescript('''ALTER TABLE outputs RENAME TO outputs_new;
+                CREATE TABLE outputs(id TEXT PRIMARY KEY,case_id TEXT NOT NULL,position INTEGER NOT NULL,content_hash TEXT NOT NULL,payload TEXT NOT NULL,UNIQUE(case_id,position));
+                INSERT INTO outputs SELECT id,case_id,position,content_hash,payload FROM outputs_new;
+                DROP TABLE outputs_new;''')
+        migrated=Store(self.tmp.name,self.store.allowed,'test-only-secret-'*3,clock=lambda:self.now)
+        with migrated.db() as c:
+            self.assertEqual([tuple(r) for r in c.execute('SELECT id,case_id,position,content_hash,payload FROM outputs ORDER BY id')],original_outputs)
+            self.assertEqual([tuple(r) for r in c.execute('SELECT * FROM ratings')],original_ratings)
+            self.assertEqual({r[0] for r in c.execute('SELECT method_id FROM outputs')},{'reviewed'})
+        migrated.import_bundle(self.baseline_bundle())
+        self.assertEqual([g['total'] for g in migrated.list_methods('doctor@example.com')],[2,0,0,2])
     def test_reference_and_future_are_not_exported(self):
         o=self.store.output('doctor@example.com','CASE01-T1')
         self.assertNotIn('reference',o);self.assertNotIn('model',o);self.assertNotIn('FUTURE',json.dumps(o))
@@ -178,6 +250,19 @@ class PortalTests(unittest.TestCase):
             except HTTPError as e:return e.code,e.read(),e.headers
         try:
             self.assertEqual(get('api/cases')[0],401);self.assertEqual(get('private/source.docx')[0],401)
+            self.assertEqual(get('api/methods')[0],401)
+            self.store.create_account('doctor1','synthetic-review-password')
+            password_headers={'Content-Type':'application/json','Origin':'https://untrusted.example'}
+            credentials={'username':'doctor1','password':'synthetic-review-password'}
+            self.assertEqual(get('api/auth/password',password_headers,credentials)[0],403)
+            password_headers['Origin']=origin
+            password_status,password_raw,password_response=get('api/auth/password',password_headers,credentials)
+            self.assertEqual(password_status,200);self.assertNotIn(b'synthetic-review-password',password_raw)
+            self.assertIn('HttpOnly',password_response['Set-Cookie'])
+            account_header={'Cookie':password_response['Set-Cookie'].split(';')[0]}
+            self.assertEqual(get('api/methods',account_header)[0],200)
+            self.assertEqual(json.loads(get('api/cases?method=baseline',account_header)[1])['cases'][0]['outputs'],[])
+            self.assertEqual(get('api/export?method=invalid',account_header)[0],400)
             token,who=self.login();h={'Cookie':'vte_review_session='+token}
             status,raw,_=get('api/outputs/CASE01-T1',h);self.assertEqual(status,200);self.assertNotIn(b'HIDDEN REFERENCE',raw)
             self.assertEqual(get('api/outputs/CASE01-T2',h)[0],403)

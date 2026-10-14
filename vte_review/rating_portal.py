@@ -7,12 +7,15 @@ from datetime import datetime,timezone,timedelta
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse,unquote
+from urllib.parse import urlparse,unquote,parse_qs
 from .rating_rubric import VERSION,DIMENSIONS,ERRORS,OVERALL,CONSEQUENCES,SEVERITY,rubric
+from .rating_methods import DEFAULT_METHOD,METHODS
 
 WEB=Path(__file__).with_name('rating_web')
 EMAIL=re.compile(r'^[A-Za-z0-9.!#$%&\x27*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$')
 ID=re.compile(r'^[A-Za-z0-9_-]{1,90}$')
+USERNAME=re.compile(r'^[a-z][a-z0-9_]{2,31}$')
+PASSWORD_ITERATIONS=600000
 
 class PortalError(Exception):
     def __init__(self,status,message):self.status=status;self.message=message
@@ -26,12 +29,22 @@ class Store:
         with self.db() as c:c.executescript('''
         CREATE TABLE IF NOT EXISTS challenges(id TEXT PRIMARY KEY,email TEXT NOT NULL,code_hash TEXT,expires REAL,attempts INTEGER DEFAULT 0,used INTEGER DEFAULT 0);
         CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY,email TEXT,csrf TEXT,expires REAL);
+        CREATE TABLE IF NOT EXISTS accounts(username TEXT PRIMARY KEY,salt TEXT NOT NULL,password_hash TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 1);
         CREATE TABLE IF NOT EXISTS limits(bucket TEXT PRIMARY KEY,start REAL,count INTEGER);
         CREATE TABLE IF NOT EXISTS cases(id TEXT PRIMARY KEY,summary TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS outputs(id TEXT PRIMARY KEY,case_id TEXT NOT NULL,position INTEGER NOT NULL,content_hash TEXT NOT NULL,payload TEXT NOT NULL,UNIQUE(case_id,position));
+        CREATE TABLE IF NOT EXISTS outputs(id TEXT PRIMARY KEY,case_id TEXT NOT NULL,position INTEGER NOT NULL,content_hash TEXT NOT NULL,payload TEXT NOT NULL,method_id TEXT NOT NULL DEFAULT 'reviewed',UNIQUE(case_id,position,method_id));
         CREATE TABLE IF NOT EXISTS ratings(email TEXT,output_id TEXT,content_hash TEXT,rubric_version TEXT,payload TEXT,status TEXT,revision INTEGER,opened_at REAL,updated_at REAL,submitted_at REAL,PRIMARY KEY(email,output_id));
         CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY,email TEXT,event TEXT,target TEXT,at REAL);
         ''')
+        # Original reports and hashes stay byte-for-byte unchanged. Only their
+        # external method classification is added; no variants are fabricated.
+        with self.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            if 'method_id' not in {r['name'] for r in c.execute('PRAGMA table_info(outputs)')}:
+                c.execute('ALTER TABLE outputs RENAME TO outputs_legacy')
+                c.execute("CREATE TABLE outputs(id TEXT PRIMARY KEY,case_id TEXT NOT NULL,position INTEGER NOT NULL,content_hash TEXT NOT NULL,payload TEXT NOT NULL,method_id TEXT NOT NULL DEFAULT 'reviewed',UNIQUE(case_id,position,method_id))")
+                c.execute("INSERT INTO outputs SELECT id,case_id,position,content_hash,payload,'reviewed' FROM outputs_legacy")
+                c.execute('DROP TABLE outputs_legacy')
         try:self.path.chmod(0o600)
         except OSError:pass
 
@@ -45,6 +58,33 @@ class Store:
         finally:c.close()
 
     def hashed(self,value):return hmac.new(self.secret,value.encode(),hashlib.sha256).hexdigest()
+
+    def authorized(self,identity):
+        if identity in self.allowed:return True
+        with self.db() as c:return c.execute('SELECT 1 FROM accounts WHERE username=? AND enabled=1',(identity,)).fetchone() is not None
+
+    def create_account(self,username,password):
+        if not isinstance(username,str) or not USERNAME.fullmatch(username):raise ValueError('Invalid account name')
+        if not isinstance(password,str) or not 6<=len(password)<=256:raise ValueError('Password must contain 6–256 characters')
+        salt=secrets.token_hex(16)
+        digest=hashlib.pbkdf2_hmac('sha256',password.encode(),bytes.fromhex(salt),PASSWORD_ITERATIONS).hex()
+        with self.db() as c:
+            c.execute('INSERT INTO accounts(username,salt,password_hash) VALUES(?,?,?)',(username,salt,digest))
+
+    def password_login(self,username,password,ip):
+        username=username.strip().lower() if isinstance(username,str) else ''
+        if not USERNAME.fullmatch(username) or not isinstance(password,str) or len(password)>256:raise PortalError(401,'账号或密码不正确。')
+        self.limit('password-ip:'+ip,60,900);self.limit('password-account:'+username,10,900)
+        with self.db() as c:account=c.execute('SELECT * FROM accounts WHERE username=?',(username,)).fetchone()
+        salt=bytes.fromhex(account['salt']) if account else self.secret[:16]
+        digest=hashlib.pbkdf2_hmac('sha256',password.encode(),salt,PASSWORD_ITERATIONS).hex()
+        expected=account['password_hash'] if account else self.hashed('invalid-account')
+        if not hmac.compare_digest(digest,expected) or not account or not account['enabled']:raise PortalError(401,'账号或密码不正确。')
+        token=secrets.token_urlsafe(40);csrf=secrets.token_urlsafe(32)
+        with self.db() as c:
+            c.execute('INSERT INTO sessions VALUES(?,?,?,?)',(self.hashed(token),username,csrf,self.clock()+8*3600))
+            c.execute('INSERT INTO events(email,event,target,at) VALUES(?,?,?,?)',(username,'login','password',self.clock()))
+        return token,{'email':username,'csrf':csrf}
 
     def limit(self,bucket,maximum,window):
         now=self.clock();bucket=self.hashed(bucket)
@@ -89,7 +129,7 @@ class Store:
 
     def session(self,token):
         with self.db() as c:r=c.execute('SELECT * FROM sessions WHERE token_hash=?',(self.hashed(token or ''),)).fetchone()
-        if not r or r['expires']<self.clock() or r['email'] not in self.allowed:raise PortalError(401,'请先登录。')
+        if not r or r['expires']<self.clock() or not self.authorized(r['email']):raise PortalError(401,'请先登录。')
         return dict(r)
 
     def logout(self,token):
@@ -104,19 +144,31 @@ class Store:
                 c.execute('INSERT INTO cases VALUES(?,?) ON CONFLICT(id) DO UPDATE SET summary=excluded.summary',(case['id'],json.dumps(summary,ensure_ascii=False)))
                 for output in case['outputs']:
                     if not ID.fullmatch(output['id']):raise ValueError('Invalid output ID')
+                    method=output.get('method_id',bundle.get('method_id',DEFAULT_METHOD))
+                    if method not in METHODS:raise ValueError('Unknown method group')
                     encoded=json.dumps(output,sort_keys=True,ensure_ascii=False);sha=hashlib.sha256(encoded.encode()).hexdigest()
-                    old=c.execute('SELECT content_hash FROM outputs WHERE id=?',(output['id'],)).fetchone()
-                    if old and old['content_hash']!=sha:raise ValueError('A released output is immutable; create a new study version')
-                    occupied=c.execute('SELECT id FROM outputs WHERE case_id=? AND position=?',(case['id'],output['position'])).fetchone()
+                    old=c.execute('SELECT content_hash,method_id FROM outputs WHERE id=?',(output['id'],)).fetchone()
+                    if old and (old['content_hash']!=sha or old['method_id']!=method):raise ValueError('A released output is immutable; create a new study version')
+                    occupied=c.execute('SELECT id FROM outputs WHERE case_id=? AND position=? AND method_id=?',(case['id'],output['position'],method)).fetchone()
                     if occupied and occupied['id']!=output['id']:raise ValueError('Timeline position already has a released output')
-                    c.execute('INSERT OR IGNORE INTO outputs VALUES(?,?,?,?,?)',(output['id'],case['id'],output['position'],sha,encoded))
+                    c.execute('INSERT OR IGNORE INTO outputs(id,case_id,position,content_hash,payload,method_id) VALUES(?,?,?,?,?,?)',(output['id'],case['id'],output['position'],sha,encoded,method))
 
-    def list_cases(self,email):
+    def method(self,method_id):
+        if method_id not in METHODS:raise PortalError(400,'方法分组无效。')
+        return method_id
+
+    def list_methods(self,email):
+        with self.db() as c:
+            counts={r['method_id']:dict(r) for r in c.execute("SELECT o.method_id,COUNT(*) AS total,COUNT(DISTINCT o.case_id) AS cases,SUM(CASE WHEN r.status='submitted' THEN 1 ELSE 0 END) AS done FROM outputs o LEFT JOIN ratings r ON r.output_id=o.id AND r.email=? GROUP BY o.method_id",(email,))}
+        return [{'id':key,'label':label,'total':counts.get(key,{}).get('total',0),'cases':counts.get(key,{}).get('cases',0),'done':counts.get(key,{}).get('done',0)} for key,label in METHODS.items()]
+
+    def list_cases(self,email,method_id=DEFAULT_METHOD):
+        method_id=self.method(method_id)
         with self.db() as c:
             cases=[]
             for row in c.execute('SELECT * FROM cases'):
                 item=json.loads(row['summary']);item.pop('baseline',None);outputs=[]
-                for o in c.execute('SELECT o.id,o.position,o.payload,r.status FROM outputs o LEFT JOIN ratings r ON r.output_id=o.id AND r.email=? WHERE o.case_id=? ORDER BY o.position',(email,row['id'])):
+                for o in c.execute('SELECT o.id,o.position,o.payload,r.status FROM outputs o LEFT JOIN ratings r ON r.output_id=o.id AND r.email=? WHERE o.case_id=? AND o.method_id=? ORDER BY o.position',(email,row['id'],method_id)):
                     payload=json.loads(o['payload']);outputs.append({'id':o['id'],'position':o['position'],'label':payload['label'],'status':o['status'] or 'not_started'})
                 unlocked=True
                 for o in outputs:
@@ -127,7 +179,7 @@ class Store:
         return cases
 
     def preview(self,email,cid):
-        if email not in self.allowed:raise PortalError(401,'请先登录。')
+        if not self.authorized(email):raise PortalError(401,'请先登录。')
         if not ID.fullmatch(cid):raise PortalError(404,'病例不存在。')
         with self.db() as c:r=c.execute('SELECT summary FROM cases WHERE id=?',(cid,)).fetchone()
         if not r:raise PortalError(404,'病例不存在。')
@@ -145,7 +197,7 @@ class Store:
         with self.db() as c:
             row=c.execute('SELECT * FROM outputs WHERE id=?',(oid,)).fetchone()
             if not row:raise PortalError(404,'记录不存在。')
-            unfinished=c.execute("SELECT COUNT(*) FROM outputs o LEFT JOIN ratings r ON r.output_id=o.id AND r.email=? WHERE o.case_id=? AND o.position<? AND COALESCE(r.status,'')!='submitted'",(email,row['case_id'],row['position'])).fetchone()[0]
+            unfinished=c.execute("SELECT COUNT(*) FROM outputs o LEFT JOIN ratings r ON r.output_id=o.id AND r.email=? WHERE o.case_id=? AND o.method_id=? AND o.position<? AND COALESCE(r.status,'')!='submitted'",(email,row['case_id'],row['method_id'],row['position'])).fetchone()[0]
             if unfinished:raise PortalError(403,'请先完成此前时间点的评分。')
             rating=c.execute('SELECT * FROM ratings WHERE email=? AND output_id=?',(email,oid)).fetchone()
             if rating and rating['rubric_version']!=VERSION:raise PortalError(409,'评分标准已更新，请联系研究管理员处理旧草稿。')
@@ -157,7 +209,7 @@ class Store:
         # Only explicit client fields are exported: never model metadata or internal ratings.
         allowed=['id','case_id','position','label','patient','context','images','answer','answer_original','report_language','assumptions','information_requests','evidence','reference','source_issues']
         data={k:v for k,v in data.items() if k in allowed}
-        data.update(content_hash=row['content_hash'],rubric_version=VERSION,rating=json.loads(rating['payload']),rating_status=rating['status'],revision=rating['revision'])
+        data.update(content_hash=row['content_hash'],rubric_version=VERSION,method_id=row['method_id'],method_label=METHODS[row['method_id']],rating=json.loads(rating['payload']),rating_status=rating['status'],revision=rating['revision'])
         return data
 
     def save_rating(self,email,oid,payload,revision,submit=False,rubric_version=VERSION):
@@ -183,13 +235,14 @@ class Store:
         if not path.is_file():raise PortalError(404,'图片不存在。')
         return path.read_bytes()
 
-    def export(self,email):
+    def export(self,email,method_id=None):
+        if method_id is not None:self.method(method_id)
         buf=io.StringIO();w=csv.writer(buf);keys=[k for k,*_ in DIMENSIONS]
-        w.writerow(['病例编号','时间点ID','评分标准版本','回答哈希',*[d[1] for d in DIMENSIONS],*[d[1]+'说明' for d in DIMENSIONS],'安全关键错误','安全错误事件数','安全错误事件_JSON','安全评分不一致说明','待仲裁','总体可接受性','最小必要修改','评审意见','页面活跃秒数','提交时间_北京时间'])
+        w.writerow(['方法编号','方法名称','病例编号','时间点ID','评分标准版本','回答哈希',*[d[1] for d in DIMENSIONS],*[d[1]+'说明' for d in DIMENSIONS],'安全关键错误','安全错误事件数','安全错误事件_JSON','安全评分不一致说明','待仲裁','总体可接受性','最小必要修改','评审意见','页面活跃秒数','提交时间_北京时间'])
         with self.db() as c:
-            for r in c.execute("SELECT r.*,o.case_id FROM ratings r JOIN outputs o ON o.id=r.output_id WHERE r.email=? AND r.status='submitted' AND r.rubric_version=? ORDER BY o.case_id,o.position",(email,VERSION)):
+            for r in c.execute("SELECT r.*,o.case_id,o.method_id FROM ratings r JOIN outputs o ON o.id=r.output_id WHERE r.email=? AND r.status='submitted' AND r.rubric_version=? AND (? IS NULL OR o.method_id=?) ORDER BY o.method_id,o.case_id,o.position",(email,VERSION,method_id,method_id)):
                 p=json.loads(r['payload']);events=[{**e,'category':ERRORS[e['category']],'severity':SEVERITY[e['severity']],'consequences':[CONSEQUENCES[x] for x in e['consequences']]} for e in p.get('safety_events',[])]
-                values=[r['case_id'],r['output_id'],r['rubric_version'],r['content_hash'],*[p['scores'][k] for k in keys],*[p.get('dimension_notes',{}).get(k,'') for k in keys],{'yes':'有','no':'未发现','uncertain':'无法判断'}[p['critical_error']],len(events),json.dumps(events,ensure_ascii=False),p.get('safety_score_explanation',''),'是' if needs_adjudication(p) else '否',OVERALL[p['overall']],p.get('minimum_change',''),p.get('comment',''),p.get('active_seconds',0),datetime.fromtimestamp(r['submitted_at'],timezone(timedelta(hours=8))).isoformat()]
+                values=[r['method_id'],METHODS[r['method_id']],r['case_id'],r['output_id'],r['rubric_version'],r['content_hash'],*[p['scores'][k] for k in keys],*[p.get('dimension_notes',{}).get(k,'') for k in keys],{'yes':'有','no':'未发现','uncertain':'无法判断'}[p['critical_error']],len(events),json.dumps(events,ensure_ascii=False),p.get('safety_score_explanation',''),'是' if needs_adjudication(p) else '否',OVERALL[p['overall']],p.get('minimum_change',''),p.get('comment',''),p.get('active_seconds',0),datetime.fromtimestamp(r['submitted_at'],timezone(timedelta(hours=8))).isoformat()]
                 w.writerow([("'"+str(v)) if str(v).lstrip('\ufeff \t\r\n').startswith(('=','+','-','@')) else v for v in values])
         return ('\ufeff'+buf.getvalue()).encode('utf-8')
 
@@ -290,13 +343,16 @@ def handler(store,origin,prefix):
                 who=store.session(self.token());email=who['email']
                 if path=='/api/me':self.json({'email':email,'csrf':who['csrf']});return
                 if path=='/api/rubric':self.json(rubric());return
-                if path=='/api/cases':self.json({'cases':store.list_cases(email)});return
+                query=parse_qs(urlparse(self.path).query)
+                if path=='/api/methods':self.json({'methods':store.list_methods(email),'default_method':DEFAULT_METHOD});return
+                if path=='/api/cases':self.json({'cases':store.list_cases(email,query.get('method',[DEFAULT_METHOD])[0])});return
                 m=re.fullmatch(r'/api/cases/([A-Za-z0-9_-]+)/preview',path)
                 if m:self.json(store.preview(email,m[1]));return
                 m=re.fullmatch(r'/api/cases/([A-Za-z0-9_-]+)/preview/assets/([a-f0-9]{64}\.png)',path)
                 if m:
                     raw=store.preview_asset(email,m[1],m[2]);self.headers_out(200,'image/png');self.wfile.write(raw);return
-                if path=='/api/export':self.headers_out(200,'text/csv; charset=utf-8');self.wfile.write(store.export(email));return
+                if path=='/api/export':
+                    raw=store.export(email,query.get('method',[None])[0]);self.headers_out(200,'text/csv; charset=utf-8');self.wfile.write(raw);return
                 m=re.fullmatch(r'/api/outputs/([A-Za-z0-9_-]+)',path)
                 if m:self.json(store.output(email,m[1]));return
                 m=re.fullmatch(r'/api/outputs/([A-Za-z0-9_-]+)/assets/([a-f0-9]{64}\.png)',path)
@@ -317,6 +373,8 @@ def handler(store,origin,prefix):
                 if not isinstance(body,dict):raise PortalError(400,'请求格式无效。')
                 ip=self.headers.get('X-Real-IP',self.client_address[0]) if self.client_address[0] in {'127.0.0.1','::1'} else self.client_address[0]
                 if path=='/api/auth/request':self.json(store.request_code(body.get('email',''),ip));return
+                if path=='/api/auth/password':
+                    token,who=store.password_login(body.get('username'),body.get('password'),ip);self.json(who,cookie=self.cookie(token));return
                 if path=='/api/auth/verify':
                     token,who=store.verify(body.get('challenge_id',''),body.get('email',''),body.get('code',''),ip);self.json(who,cookie=self.cookie(token));return
                 who=store.session(self.token())

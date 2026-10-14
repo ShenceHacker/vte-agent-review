@@ -10,3 +10,5 @@ progress{display:block;width:100%;height:3px;appearance:none;border:0;margin-top
 .score-row{grid-template-columns:repeat(7,minmax(0,1fr))}.dimension-note textarea{min-height:64px;font-size:12px;margin-top:6px}.safety-event{border:1px solid var(--line);border-radius:9px;padding:12px;margin:12px 0;font-size:12px}.safety-event summary{cursor:pointer;font-weight:600}.safety-event textarea{font-size:12px;margin-top:6px;min-height:64px}.safety-event select{display:block;margin-top:6px}.safety-event .checks{grid-template-columns:1fr}.rating-title h2{gap:8px}#safety-detail>button{font-size:12px;width:100%}[hidden]{display:none!important}
 
 .decimal-score{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:7px;font-size:11px;color:var(--muted)}.decimal-score input{width:100px;padding:6px 9px;font-size:13px}.decimal-score input:invalid{border-color:#ba4141}
+
+.method-label{display:block;font-size:12px;font-weight:600;margin:0 0 8px}.method-status{margin:0 0 18px}#method{width:100%;margin-bottom:7px}@media(max-width:760px){.method-label{display:inline-block;margin-right:10px}#method{width:70%}.method-status{margin-bottom:8px}}
