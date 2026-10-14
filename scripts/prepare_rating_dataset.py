@@ -2,6 +2,7 @@
 from pathlib import Path
 import sys,json,re,base64,io,sqlite3
 from copy import deepcopy
+from contextlib import closing
 from PIL import Image
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 from vte_review.intake import SourceStore
@@ -25,16 +26,23 @@ def blind(text):
     text=re.sub(r'(?:我科|门诊|急诊)[^。\n]{0,12}以[“\"][^”\"]+[”\"](?:收入院|收住院|收入我科)[。；]?','',text)
     return text
 
-def prepare():
+def prepare(out=OUT, case_ids=None):
     global CURATION
+    OUT=Path(out)
     CURATION=json.loads((DATA/'private/curation.json').read_text(encoding='utf-8'))
+    manifest=json.loads((DATA/'manifest.json').read_text(encoding='utf-8'))
+    selected=[case for case in manifest['cases'] if (case_ids is None and case['processing_status']=='new') or (case_ids is not None and case['case_id'] in case_ids)]
+    if not selected:raise ValueError('No new cases selected')
+    if any(case['processing_status'].startswith('completed') for case in selected):raise ValueError('Completed cases must not be prepared again')
+    if case_ids is not None and {c['case_id'] for c in selected}!=set(case_ids):raise ValueError('Unknown selected case')
+    processing_dir=OUT.resolve().relative_to(DATA.resolve()).as_posix()
+    if (OUT/'batch.json').exists():raise ValueError('This batch has already started; refusing to overwrite its inputs')
     OUT.mkdir(parents=True,exist_ok=True);work=OUT/'workspace';work.mkdir(exist_ok=True)
     if not (work/'knowledge.sqlite3').exists():
-        with sqlite3.connect(ROOT/'runs/knowledge.sqlite3') as a,sqlite3.connect(work/'knowledge.sqlite3') as b:a.backup(b)
+        with closing(sqlite3.connect(ROOT/'runs/knowledge.sqlite3')) as a,closing(sqlite3.connect(work/'knowledge.sqlite3')) as b:a.backup(b)
     original=SourceStore(DATA/'private/parsed');store=SourceStore(work/'sources')
-    manifest=json.loads((DATA/'manifest.json').read_text());records=[]
-    for case in manifest['cases']:
-        if case['processing_status']=='completed_reused':continue
+    records=[]
+    for case in selected:
         cid=case['case_id'];profile=CURATION['cases'][cid];src=original.get(case['source_id'])
         image_map={};rx_ids=set()
         for i,sid in enumerate(src['images'],1):
@@ -80,13 +88,13 @@ def prepare():
         clean=store._save(cid+'-blinded.txt',payload,'text/plain','\n'.join(b['text'] for b in blocks),list(dict.fromkeys(i for b in blocks for i in b['images'])),blocks)
         planned=plan_sources(store,[clean['id']]);assert len(planned)==len(nodes),(cid,len(planned),len(nodes))
         write_json(OUT/(cid+'-input.json'),blocks);write_json(OUT/(cid+'-gold.json'),gold)
-        case.update(timepoints=len(nodes),processing_status='prepared',data_issues=issues)
+        case.update(timepoints=len(nodes),processing_status='prepared',data_issues=issues,processing_dir=processing_dir)
         records.append({'case':cid,'source_id':clean['id'],'nodes':len(nodes),'gold':cid+'-gold.json'})
     write_json(DATA/'manifest.json',manifest)
     write_json(OUT/'protocol.json',{'version':'2026-10-12.r1','model':'gpt-5.6-sol','records':records,
        'input_policy':'Contemporaneous physician order held out; prior actual prescriptions retained; imaging reports retained; no independent diagnostic gold yet.',
-       'old_cases':'CASE01-10 reused verbatim, not rerun','parser_changes':'Recognize Chinese relative headings; ignore ZIP media directory entries; retry transient Windows file sharing errors.',
-       'max_series_attempts':5,'patient_concurrency':2,'known_source_issues':'Private curation.json preserves per-case date and image-assignment notes.'})
+       'old_cases':'Completed cases retained verbatim, not rerun','parser_changes':'Recognize Chinese relative headings; ignore ZIP media directory entries; retry transient Windows file sharing errors.',
+       'max_series_attempts':6,'patient_concurrency':2,'known_source_issues':'Private curation.json preserves per-case date and image-assignment notes.'})
     print(json.dumps({'new_cases':len(records),'timepoints':sum(r['nodes'] for r in records)},ensure_ascii=False))
 
 if __name__=='__main__':prepare()

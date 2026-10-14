@@ -3,7 +3,7 @@ from pathlib import Path
 import sys,json,hashlib,re,io
 from PIL import Image
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
-from vte_review.dataset import write_json
+from vte_review.dataset import write_json,processing_directory
 from vte_review.longitudinal import load
 DATA=ROOT/'data/vte_dataset';DEST=DATA/'portal';ASSETS=DEST/'assets'
 
@@ -25,9 +25,9 @@ def export():
     ASSETS.mkdir(parents=True,exist_ok=True);manifest=load(DATA/'manifest.json');cases=[];audit=[]
     old=DATA/'private/history/evaluation-20261009'
     if not old.exists():old=ROOT/'runs/evaluation-20261009'
-    new=DATA/'processing/sol-20261012'
     for record in manifest['cases']:
-        cid=record['case_id'];source=old if int(cid[4:])<=10 else new
+        cid=record['case_id'];source=processing_directory(DATA,record)
+        if int(cid[4:])<=10 and not source.exists():source=old
         batch=load(source/'batch.json',{});state=batch.get(cid);series=load(source/'workspace/series'/state['series_id']/'series.json',{}) if state else {}
         gold=load(source/(cid+'-gold.json'),[]);input_blocks=load(source/(cid+'-input.json'),[])
         basic=info('\n'.join(b['text'] for b in input_blocks[:2]));items=[];allowed=set()

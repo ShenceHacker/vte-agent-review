@@ -1,6 +1,6 @@
 """Resume only the newly collected cohort; retain unresolved clinical reviews."""
 from pathlib import Path
-import sys,json,time,asyncio,hashlib,threading,os
+import sys,json,time,asyncio,hashlib,threading,os,argparse
 from copy import deepcopy
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 from scripts.serve_fe import configure_fe
@@ -58,4 +58,10 @@ def run():
         time.sleep(5)
     print('BATCH_FINISHED',flush=True)
 
-if __name__=='__main__':run()
+if __name__=='__main__':
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--batch-dir',type=Path,default=OUT)
+    parser.add_argument('--ssh-tunnel',action='store_true')
+    args=parser.parse_args();OUT=args.batch_dir.resolve()
+    OUT.relative_to((ROOT/'data/vte_dataset/processing').resolve())
+    run()

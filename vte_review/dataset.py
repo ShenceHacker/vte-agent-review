@@ -51,6 +51,17 @@ def write_json(path: Path, value):
     tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')
     tmp.replace(path)
 
+
+def processing_directory(dataset: Path, case: dict) -> Path:
+    """Resolve a case's recorded batch without mixing separate cohort runs."""
+    default = 'private/history/evaluation-20261009' if int(case['case_id'][4:]) <= 10 else 'processing/sol-20261012'
+    relative = PurePosixPath(str(case.get('processing_dir', default)).replace('\\', '/'))
+    if relative.is_absolute() or '..' in relative.parts or ':' in str(relative):
+        raise ValueError('Invalid processing directory')
+    target = (dataset / relative).resolve()
+    target.relative_to(dataset.resolve())
+    return target
+
 def collect(incoming: Path, dataset: Path, prior_cases: Path, prior_results: Path) -> dict:
     dataset.mkdir(parents=True, exist_ok=True)
     manifest_path = dataset/'manifest.json'

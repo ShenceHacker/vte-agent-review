@@ -14,6 +14,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from vte_review.rating_rubric import VERSION
+from vte_review.dataset import processing_directory
 
 
 def read(path):
@@ -45,7 +46,7 @@ def verify(previous_archive):
                 ('Rationale and conditions', '依据与适用条件')]
     for cid, case in cases.items():
         legacy = int(cid[4:]) <= 10
-        source = data / ('private/history/evaluation-20261009' if legacy else 'processing/sol-20261012')
+        source = processing_directory(data, records[cid])
         batch = read(source / 'batch.json')
         series = read(source / 'workspace/series' / batch[cid]['series_id'] / 'series.json')
         assert series['status'] == 'complete', cid
