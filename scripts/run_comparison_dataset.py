@@ -5,6 +5,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -53,9 +54,13 @@ def main():
     p.add_argument('--max-attempts', type=int, default=3)
     p.add_argument('--limit', type=int)
     p.add_argument('--verify', action='store_true', help='Verify saved results and export local HTML/CSV')
+    p.add_argument('--follow-target', type=int, help='Finite batch: wait for this many authoritative nodes')
+    p.add_argument('--wait-minutes', type=int, default=180)
     args = p.parse_args()
     if not 1 <= args.concurrency <= 8 or not 1 <= args.max_attempts <= 6:
         p.error('concurrency must be 1..8; attempts must be 1..6')
+    if args.follow_target and (not args.run or args.limit or args.follow_target < 1 or not 1 <= args.wait_minutes <= 360):
+        p.error('follow-target requires --run, no --limit and a 1..360 minute bound')
     records = discover(args.dataset)
     if args.limit:
         records = records[:args.limit]
@@ -78,7 +83,27 @@ def main():
         print('COMPARISON_BATCH_FINISHED', json.dumps(summary(args.out)), flush=True)
     if args.verify:
         print(json.dumps(export_and_verify(args.out)), flush=True)
+    if args.follow_target:
+        deadline = time.monotonic() + args.wait_minutes*60
+        while True:
+            state = summary(args.out)
+            ready = state['prepared_nodes'] >= args.follow_target
+            complete = all(state['methods'][m]['completed'] >= args.follow_target for m in ('baseline', 'rag', 'synthesis'))
+            if complete or ready or time.monotonic() >= deadline:
+                final = {'status': 'complete' if complete else 'failed_outputs' if ready else 'source_wait_timeout',
+                         'target_nodes': args.follow_target, 'progress': state,
+                         'verification': export_and_verify(args.out)}
+                save(args.out/'final-status.json', final)
+                print('COMPARISON_FINAL', json.dumps(final), flush=True)
+                return 0 if complete else 2
+            time.sleep(30)
+            records = discover(args.dataset)
+            folders = [prepare(record, args.out) for record in records]
+            # A failed request is bounded by its persisted attempts, so this loop
+            # cannot repeatedly resample terminal or exhausted results.
+            asyncio.run(run(args, folders))
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

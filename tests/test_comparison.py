@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import AsyncMock, patch
 
 from vte_review.comparison import (baseline_case, digest, extract_initial, load, prepare,
                                    request_for, response_output, run_one, save, export_and_verify)
@@ -117,6 +118,21 @@ class ComparisonTests(unittest.TestCase):
                 save(folder/'rag/result.json', output)
                 with self.assertRaises(AssertionError): export_and_verify(out)
         asyncio.run(check())
+
+    def test_finite_batch_distinguishes_completion_failure_and_timeout(self):
+        from scripts import run_comparison_dataset as runner
+        for ready, completed, expected, code in [(1, 1, 'complete', 0), (1, 0, 'failed_outputs', 2), (0, 0, 'source_wait_timeout', 2)]:
+            with self.subTest(expected=expected), tempfile.TemporaryDirectory() as d:
+                state = {'prepared_nodes': ready, 'methods': {m: {'completed': completed} for m in ('baseline', 'rag', 'synthesis')}}
+                with patch('sys.argv', ['runner', '--out', d, '--run', '--follow-target', '1']), \
+                     patch.object(runner, 'discover', return_value=[]), \
+                     patch.object(runner, 'run', new=AsyncMock()), \
+                     patch.object(runner, 'summary', return_value=state), \
+                     patch.object(runner, 'export_and_verify', return_value={'verified': True}), \
+                     patch.object(runner.time, 'monotonic', side_effect=[0, 100000]), \
+                     patch('builtins.print'):
+                    self.assertEqual(runner.main(), code)
+                self.assertEqual(load(Path(d)/'final-status.json')['status'], expected)
 
 
 if __name__ == '__main__':
