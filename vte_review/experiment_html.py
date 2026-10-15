@@ -11,8 +11,10 @@ from .longitudinal import load
 
 def render_value(value):
     if isinstance(value, dict):
-        return '<dl>'+''.join('<dt>'+escape(str(k))+'</dt><dd>'+render_value(v)+'</dd>' for k,v in value.items())+'</dl>'
+        return '<table class="record-table"><tbody>'+''.join('<tr><th scope="row">'+escape(str(k))+'</th><td>'+render_value(v)+'</td></tr>' for k,v in value.items())+'</tbody></table>'
     if isinstance(value, list):
+        if value and all(isinstance(item, dict) for item in value):
+            return ''.join('<details class="record-item"><summary>'+escape(str(item.get('id') or item.get('case') or item.get('case_id') or ('记录 '+str(i+1))))+'</summary>'+render_value(item)+'</details>' for i,item in enumerate(value))
         return '<ul>'+''.join('<li>'+render_value(v)+'</li>' for v in value)+'</ul>' if value else '<span class="muted">无</span>'
     return escape(str(value)) if value is not None else '<span class="muted">未记录</span>'
 
@@ -59,6 +61,8 @@ def write_experiment_html(out):
     if failures:
         sections += '<section><details><summary>技术失败与重试记录（'+str(len(failures))+'个请求）</summary>'+render_value(failures)+'</details></section>'
     page = '''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>VTE 实验记录</title><style>body{font:16px/1.65 system-ui,sans-serif;margin:0 auto;max-width:1040px;padding:28px;background:#f4f7fb;color:#17283d}h1{font-size:30px}h2{font-size:22px}section{background:white;border:1px solid #dbe4ed;border-radius:12px;padding:22px;margin:20px 0}table{border-collapse:collapse;width:100%}th,td{padding:12px;text-align:left;border-bottom:1px solid #dbe4ed}a{color:#075daf}summary{cursor:pointer;font-weight:650}dt{font-weight:650;margin-top:12px}dd{margin-left:18px;overflow-wrap:anywhere;white-space:pre-wrap}li{margin:8px 0}.muted{color:#627387}dl dl{border-left:2px solid #dbe4ed;padding-left:12px}@media(max-width:600px){body{padding:12px}section{padding:14px}th,td{padding:7px}}</style></head><body><h1>VTE 实验记录</h1><p class="muted">页面生成：'''+timestamp+'''</p><p>实验记录统一通过 HTML 阅读；论文中的结果仍整理成表格。原始数据与程序日志保留用于复现。</p>'''+sections+'</body></html>'
+    from .report_display import enhance_report_html
+    page = enhance_report_html(page)
     destination = dataset/'实验记录.html'
     temporary = destination.with_suffix('.'+uuid4().hex+'.tmp')
     temporary.write_text(page, encoding='utf-8')

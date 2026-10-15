@@ -49,7 +49,7 @@ async def run(args, folders):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--dataset', type=Path, default=ROOT/'data/vte_dataset')
-    p.add_argument('--out', type=Path, default=ROOT/'data/vte_dataset/comparison-20261014')
+    p.add_argument('--out', type=Path, default=ROOT/'data/vte_dataset/comparison-20261015-concise')
     p.add_argument('--run', action='store_true')
     p.add_argument('--ssh-tunnel', action='store_true', help='Use separately established local SSH tunnel on 18881')
     p.add_argument('--concurrency', type=int, default=4)

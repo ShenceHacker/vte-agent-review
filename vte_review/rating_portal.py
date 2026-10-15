@@ -336,7 +336,7 @@ def handler(store,origin,prefix):
         def do_GET(self):
             try:
                 path=self.route()
-                if path in {'/','/portal.js','/portal.css','/logo.svg'}:
+                if path in {'/','/portal.js','/portal.css','/report.js','/report.css','/logo.svg'}:
                     f=WEB/('index.html' if path=='/' else path[1:]);types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml'}
                     self.headers_out(200,types[f.suffix]);self.wfile.write(f.read_bytes());return
                 if path=='/api/health':self.json({'status':'ok','rubric_version':VERSION});return
