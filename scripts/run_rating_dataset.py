@@ -8,6 +8,7 @@ from vte_review.server import App
 from vte_review.longitudinal import load,save
 from vte_review.vector import VectorStore
 from vte_review.providers import ChatCompletionsModel,ProviderError
+from vte_review.reviewed_experiment_html import write_reviewed_html
 OUT=ROOT/'data/vte_dataset/processing/sol-20261012'
 QUESTION=('Using only information available at this time point, state the working VTE diagnosis '
  '(DVT/PE, laterality, anatomical extent, uncertainty and competing diagnoses), then recommend '
@@ -53,7 +54,9 @@ def run():
                 app.retry_series(detail['id'],{});record['attempts']+=1;save(OUT/'batch.json',state);active=True
             summary.append({'case':key,'status':detail['status'],'done':detail.get('completed_nodes',0),'total':detail['node_count'],'attempts':record['attempts']})
         save(OUT/'progress.json',summary);current=json.dumps(summary)
-        if current!=previous:print(current,flush=True);previous=current
+        if current!=previous:
+            write_reviewed_html(OUT)
+            print(current,flush=True);previous=current
         if not active:break
         time.sleep(5)
     print('BATCH_FINISHED',flush=True)

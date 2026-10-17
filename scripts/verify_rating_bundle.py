@@ -100,7 +100,8 @@ def verify(previous_archive):
         with Image.open(path) as im:
             im.verify()
     with tarfile.open(previous_archive) as archive:
-        old = json.load(archive.extractfile('bundle/bundle.json'))
+        member = 'bundle.json' if 'bundle.json' in archive.getnames() else 'bundle/bundle.json'
+        old = json.load(archive.extractfile(member))
     published = {o['id']: o for c in old['cases'] for o in c['outputs']}
     assert all(outputs.get(oid) == item for oid, item in published.items()), 'Released output changed'
     summary = {'checked_at': datetime.now(timezone.utc).isoformat(), 'rubric_version': VERSION,

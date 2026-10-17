@@ -28,6 +28,8 @@ def write_experiment_html(out):
     expected = sum(c.get('timepoints', 0) for c in manifest.get('cases', []))
     progress = load(out/'progress.json', {})
     final = load(out/'final-status.json', {})
+    # A frozen comparison cohort must not grow when a later reviewed batch arrives.
+    expected = final.get('target_nodes') or progress.get('prepared_nodes') or expected
     names = {'baseline':'基础模型', 'rag':'单模型 RAG', 'synthesis':'审核前首次汇总'}
     def link(path, label):
         if not path.exists():
@@ -45,6 +47,8 @@ def write_experiment_html(out):
                (out/'final-status.json', '本次对照：最终执行状态')]
     for batch in sorted((dataset/'processing').glob('*')):
         if not batch.is_dir(): continue
+        if (batch/'实验记录.html').exists():
+            sections += '<section><h2>'+escape(batch.name)+'：完整审核修订系统</h2><p>'+link(batch/'实验记录.html','查看本批进度与报告')+'</p></section>'
         sources += [(batch/'protocol.json', batch.name+'：实验方案'),
                     (batch/'progress.json', batch.name+'：完整方法进度'),
                     (batch/'input-verification.json', batch.name+'：输入核验')]
