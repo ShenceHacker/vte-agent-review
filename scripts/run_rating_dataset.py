@@ -22,7 +22,7 @@ class EvaluationApp(App):
         body=deepcopy(body);body['case']['question']=QUESTION
         return super().start(body)
 
-def run():
+def run(max_attempts=6):
     configure_fe(Path.home()/'.claude/settings.json','gpt-5.6-sol')
     if '--ssh-tunnel' in sys.argv:os.environ['VTE_BASE_URL']='http://127.0.0.1:18880/v1'
     os.environ['VTE_OUTPUT_LANGUAGE']='zh'
@@ -41,7 +41,7 @@ def run():
     for record in load(OUT/'protocol.json')['records']:
         key=record['case']
         if key not in state:state[key]={'series_id':app.start_series({'source_ids':[record['source_id']]}),'attempts':1}
-        elif app.series_detail(state[key]['series_id'])['status']!='complete' and state[key]['attempts']<6:
+        elif app.series_detail(state[key]['series_id'])['status']!='complete' and state[key]['attempts']<max_attempts:
             app.retry_series(state[key]['series_id'],{});state[key]['attempts']+=1
         save(OUT/'batch.json',state)
     previous=None
@@ -50,7 +50,7 @@ def run():
         for key,record in state.items():
             detail=app.series_detail(record['series_id']);job=app.series_jobs.get(record['series_id'])
             if job and not job.done:active=True
-            elif detail['status']=='failed' and record['attempts']<6:
+            elif detail['status']=='failed' and record['attempts']<max_attempts:
                 app.retry_series(detail['id'],{});record['attempts']+=1;save(OUT/'batch.json',state);active=True
             summary.append({'case':key,'status':detail['status'],'done':detail.get('completed_nodes',0),'total':detail['node_count'],'attempts':record['attempts']})
         save(OUT/'progress.json',summary);current=json.dumps(summary)
@@ -65,6 +65,8 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('--batch-dir',type=Path,default=OUT)
     parser.add_argument('--ssh-tunnel',action='store_true')
+    parser.add_argument('--max-attempts',type=int,choices=range(1,13),default=6,
+                        help='Finite cumulative case-resume limit, including earlier attempts')
     args=parser.parse_args();OUT=args.batch_dir.resolve()
     OUT.relative_to((ROOT/'data/vte_dataset/processing').resolve())
-    run()
+    run(args.max_attempts)
