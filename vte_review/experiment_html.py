@@ -41,7 +41,12 @@ def write_experiment_html(out):
         completed = progress.get('methods', {}).get(key, {}).get('completed', 0)
         rows += '<tr><td>'+label+'</td><td>'+str(completed)+'</td><td>'+str(expected or '待确定')+'</td><td>'+str(max(0, expected-completed))+'</td></tr>'
     state = {'complete':'全部完成', 'failed_outputs':'运行结束，存在输出失败', 'source_wait_timeout':'等待源数据超时'}.get(final.get('status'), '尚无完成记录；以当前进度为准')
-    sections = '<section><h2>本次对照实验</h2><p>'+escape(state)+'</p><table><thead><tr><th>组别</th><th>已完成</th><th>目标时间点</th><th>尚缺</th></tr></thead><tbody>'+rows+'</tbody></table><p>'+link(out/'clinical_results.html','查看各组完整回答（可搜索、筛选）')+'</p><p>第三组原样提取原流程审核前首次汇总。本聊天不重跑完整审核修订系统。运行完成不代表临床评审通过。</p></section>'
+    sections = '<section><h2>本次对照实验</h2><p>'+escape(state)+'</p><table><thead><tr><th>组别</th><th>已完成</th><th>目标时间点</th><th>尚缺</th></tr></thead><tbody>'+rows+'</tbody></table><p>'+link(out/'clinical_results.html','查看各组完整回答（可搜索、筛选）')+'</p><p>第三组原样提取原流程审核前首次汇总。对照程序不重跑完整审核修订系统；完整系统的批次进度见下方。运行完成不代表临床评审通过。</p></section>'
+    for previous in sorted(dataset.glob('comparison-*')):
+        if previous.is_dir() and previous.resolve()!=out.resolve() and (previous/'progress.json').exists():
+            old=load(previous/'progress.json',{})
+            counts='；'.join(names.get(k,k)+' '+str(v.get('completed',0))+' 份' for k,v in old.get('methods',{}).items())
+            sections+='<section><h2>'+escape(previous.name)+'</h2><p>'+escape(counts)+'</p><p>'+link(previous/'clinical_results.html','查看该批原始报告')+'</p></section>'
     sources = [(out/'protocol.json', '本次对照：实验设置与比较边界'),
                (out/'verification.json', '本次对照：文件与来源核验'),
                (out/'final-status.json', '本次对照：最终执行状态')]

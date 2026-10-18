@@ -1,4 +1,4 @@
-import base64,csv,io,json,tempfile,threading,unittest,zipfile
+import base64,csv,gzip,io,json,tempfile,threading,unittest,zipfile
 from pathlib import Path
 from urllib.request import Request,urlopen
 from urllib.error import HTTPError
@@ -25,6 +25,25 @@ class PortalTests(unittest.TestCase):
         self.store=Store(self.tmp.name,['doctor@example.com','second@example.com'],'test-only-secret-'*3,lambda e,c:self.sent.append((e,c)),clock=lambda:self.now)
         self.store.import_bundle(bundle())
     def tearDown(self):self.tmp.cleanup()
+    def test_pilot_scope_preserves_old_ratings_and_blocks_all_access_paths(self):
+        self.store.save_rating('doctor@example.com','CASE01-T1',rating(),0,True)
+        with self.store.db() as c:
+            c.execute("UPDATE ratings SET rubric_version='VTE-R2-2026-10-13'")
+            before=[tuple(r) for r in c.execute('SELECT * FROM ratings')]
+        other=json.loads(json.dumps(bundle()).replace('CASE01','CASE41'))
+        self.store.import_bundle(other)
+        Path(self.tmp.name,'active-study.json').write_text(json.dumps({'rubric_version':VERSION,'case_ids':['CASE41']}))
+        scoped=Store(self.tmp.name,['doctor@example.com'],'test-only-secret-'*3)
+        self.assertEqual([c['id'] for c in scoped.list_cases('doctor@example.com')],['CASE41'])
+        self.assertEqual(scoped.list_methods('doctor@example.com')[-1]['total'],2)
+        for call in [lambda:scoped.output('doctor@example.com','CASE01-T1'),lambda:scoped.preview('doctor@example.com','CASE01'),lambda:scoped.asset('doctor@example.com','CASE01-T1','a'*64+'.png')]:
+            with self.assertRaises(PortalError) as err:call()
+            self.assertEqual(err.exception.status,404)
+        self.assertNotIn('CASE01',scoped.export('doctor@example.com').decode('utf-8'))
+        with scoped.db() as c:self.assertEqual(before,[tuple(r) for r in c.execute('SELECT * FROM ratings')])
+    def test_scope_configuration_fails_closed(self):
+        Path(self.tmp.name,'active-study.json').write_text(json.dumps({'rubric_version':'old','case_ids':[]}))
+        with self.assertRaises(ValueError):Store(self.tmp.name,[],'test-only-secret-'*3)
     def login(self,email='doctor@example.com'):
         d=self.store.request_code(email,'test-ip');code=self.sent[-1][1]
         return self.store.verify(d['challenge_id'],email,code,'test-ip')
@@ -67,7 +86,7 @@ class PortalTests(unittest.TestCase):
         with self.store.db() as c:rows=c.execute('SELECT salt,password_hash FROM accounts ORDER BY username').fetchall()
         self.assertNotEqual(rows[0]['salt'],rows[1]['salt']);self.assertNotEqual(rows[0]['password_hash'],rows[1]['password_hash'])
         self.assertNotIn(password,str([tuple(r) for r in rows]))
-        r=rating();r['scores']['diagnosis']=4.25
+        r=rating();r['scores']['dose']=4.25
         self.store.save_rating('doctor1','CASE01-T1',r,0,True)
         self.assertEqual(self.store.output('doctor2','CASE01-T1')['rating'],{})
         self.assertNotIn('4.25',self.store.export('doctor2').decode('utf-8'))
@@ -169,14 +188,14 @@ class PortalTests(unittest.TestCase):
         with self.assertRaises(PortalError):validate_rating(r,True)
         r.update(safety_events=[safety_event()],overall='major');r['scores']['safety']=2;r['dimension_notes']['safety']='Synthetic risk';validate_rating(r,True)
         for value in ['NA','NE']:
-            r=rating();r['scores']['diagnosis']=value
+            r=rating();r['scores']['dose']=value
             with self.assertRaises(PortalError):validate_rating(r,True)
-            r['dimension_notes']['diagnosis']='Reason specific to this dimension';validate_rating(r,True)
+            r['dimension_notes']['dose']='Reason specific to this dimension';validate_rating(r,True)
     def test_each_low_score_needs_its_own_note(self):
         for score in [1,2,3]:
-            r=rating();r['scores']['diagnosis']=score;r['comment']='General comment'
+            r=rating();r['scores']['dose']=score;r['comment']='General comment'
             with self.assertRaises(PortalError):validate_rating(r,True)
-            r['dimension_notes']['diagnosis']='Specific deficiency';validate_rating(r,True)
+            r['dimension_notes']['dose']='Specific deficiency';validate_rating(r,True)
     def test_critical_error_cannot_be_accepted_and_mismatch_needs_reason(self):
         r=rating();r.update(critical_error='yes',safety_events=[safety_event()],safety_score_explanation='Needs adjudication')
         for overall in ['accept','minor']:
@@ -210,17 +229,17 @@ class PortalTests(unittest.TestCase):
             self.assertEqual(e.exception.status,409)
         with self.store.db() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM ratings').fetchone()[0],0)
     def test_r2_csv_preserves_na_ne_and_notes(self):
-        r=rating();r['scores'].update(diagnosis='NA',timeline='NE');r['dimension_notes'].update(diagnosis='Not applicable',timeline='Insufficient materials')
+        r=rating();r['scores'].update(dose='NA',timeline='NE');r['dimension_notes'].update(dose='Not applicable',timeline='Insufficient materials')
         self.store.save_rating('doctor@example.com','CASE01-T1',r,0,True)
         row=list(csv.DictReader(io.StringIO(self.store.export('doctor@example.com').decode('utf-8-sig'))))[0]
-        self.assertEqual(row['评分标准版本'],VERSION);self.assertEqual(row['诊断与抗凝决策合理性'],'NA');self.assertEqual(row['疗程时间线与动态调整'],'NE');self.assertEqual(row['疗程时间线与动态调整说明'],'Insufficient materials')
+        self.assertEqual(row['评分标准版本'],VERSION);self.assertEqual(row['剂量准确性'],'NA');self.assertEqual(row['疗程决策'],'NE');self.assertEqual(row['疗程决策说明'],'Insufficient materials')
     def test_decimal_scores_survive_save_reload_submit_and_csv(self):
-        r=rating();r['scores'].update(diagnosis=3.5,medication=4.25,timeline=1.5);r['dimension_notes']['timeline']='Synthetic missing timeline detail'
+        r=rating();r['scores'].update(dose=3.5,medication=4.25,timeline=1.5);r['dimension_notes']['timeline']='Synthetic missing timeline detail'
         self.store.save_rating('doctor@example.com','CASE01-T1',r,0)
         self.assertEqual(self.store.output('doctor@example.com','CASE01-T1')['rating']['scores'],r['scores'])
         self.store.save_rating('doctor@example.com','CASE01-T1',r,1,True)
         row=list(csv.DictReader(io.StringIO(self.store.export('doctor@example.com').decode('utf-8-sig'))))[0]
-        self.assertEqual(row['诊断与抗凝决策合理性'],'3.5');self.assertEqual(row['药物选择与个体化给药'],'4.25');self.assertEqual(row['疗程时间线与动态调整'],'1.5')
+        self.assertEqual(row['剂量准确性'],'3.5');self.assertEqual(row['药物选择适宜性'],'4.25');self.assertEqual(row['疗程决策'],'1.5')
     def test_decimal_low_notes_and_safety_thresholds(self):
         r=rating();r['scores']['safety']=2.5
         with self.assertRaises(PortalError):validate_rating(r,True)
@@ -264,6 +283,12 @@ class PortalTests(unittest.TestCase):
             self.assertEqual(json.loads(get('api/cases?method=baseline',account_header)[1])['cases'][0]['outputs'],[])
             self.assertEqual(get('api/export?method=invalid',account_header)[0],400)
             token,who=self.login();h={'Cookie':'vte_review_session='+token}
+            plain=get('api/rubric',h)[1]
+            status,packed,headers=get('api/rubric',{**h,'Accept-Encoding':'gzip, deflate, br'})
+            self.assertEqual(status,200);self.assertEqual(headers['Content-Encoding'],'gzip')
+            self.assertEqual(gzip.decompress(packed),plain);self.assertLess(len(packed),len(plain))
+            self.assertEqual(headers['Cache-Control'],'no-store')
+            self.assertNotIn('Content-Encoding',get('api/rubric',{**h,'Accept-Encoding':'gzip;q=0'})[2])
             status,raw,_=get('api/outputs/CASE01-T1',h);self.assertEqual(status,200);self.assertNotIn(b'HIDDEN REFERENCE',raw)
             self.assertEqual(get('api/outputs/CASE01-T2',h)[0],403)
             h.update({'Content-Type':'application/json','Origin':'https://untrusted.example'})

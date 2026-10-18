@@ -55,6 +55,7 @@ def main():
     p.add_argument('--concurrency', type=int, default=4)
     p.add_argument('--max-attempts', type=int, default=3)
     p.add_argument('--limit', type=int)
+    p.add_argument('--cases', nargs='+', help='Only these case IDs; preserve other frozen cohorts')
     p.add_argument('--verify', action='store_true', help='Verify saved results and export local HTML/CSV')
     p.add_argument('--follow-target', type=int, help='Finite batch: wait for this many authoritative nodes')
     p.add_argument('--wait-minutes', type=int, default=180)
@@ -64,6 +65,8 @@ def main():
     if args.follow_target and (not args.run or args.limit or args.follow_target < 1 or not 1 <= args.wait_minutes <= 360):
         p.error('follow-target requires --run, no --limit and a 1..360 minute bound')
     records = discover(args.dataset)
+    if args.cases:
+        records = [r for r in records if r['case_id'] in args.cases]
     if args.limit:
         records = records[:args.limit]
     folders = [prepare(record, args.out) for record in records]
@@ -102,6 +105,8 @@ def main():
                 return 0 if complete else 2
             time.sleep(30)
             records = discover(args.dataset)
+            if args.cases:
+                records = [r for r in records if r['case_id'] in args.cases]
             folders = [prepare(record, args.out) for record in records]
             # A failed request is bounded by its persisted attempts, so this loop
             # cannot repeatedly resample terminal or exhausted results.

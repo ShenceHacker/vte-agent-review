@@ -1,6 +1,6 @@
 """Private physician ratings portal, isolated from the model execution service."""
 from __future__ import annotations
-import argparse,base64,csv,hashlib,hmac,io,json,os,re,secrets,smtplib,sqlite3,ssl,time
+import argparse,base64,csv,gzip,hashlib,hmac,io,json,os,re,secrets,smtplib,sqlite3,ssl,time
 from contextlib import contextmanager
 from email.message import EmailMessage
 from datetime import datetime,timezone,timedelta
@@ -25,6 +25,13 @@ class Store:
         self.root=Path(root);self.root.mkdir(parents=True,exist_ok=True)
         self.path=self.root/'ratings.sqlite3';self.allowed={e.strip().lower() for e in allowed if e.strip()}
         self.secret=secret.encode();self.mailer=mailer;self.clock=clock
+        scope=self.root/'active-study.json'
+        self.active_cases=None
+        if scope.exists():
+            study=json.loads(scope.read_text(encoding='utf-8'))
+            if study.get('rubric_version')!=VERSION or not isinstance(study.get('case_ids'),list) or not study['case_ids'] or any(not isinstance(cid,str) or not ID.fullmatch(cid) for cid in study['case_ids']):
+                raise ValueError('Invalid active study; refusing to expose an unintended cohort')
+            self.active_cases=frozenset(study['case_ids'])
         if len(self.secret)<32:raise ValueError('A random secret of at least 32 characters is required')
         with self.db() as c:c.executescript('''
         CREATE TABLE IF NOT EXISTS challenges(id TEXT PRIMARY KEY,email TEXT NOT NULL,code_hash TEXT,expires REAL,attempts INTEGER DEFAULT 0,used INTEGER DEFAULT 0);
@@ -157,16 +164,22 @@ class Store:
         if method_id not in METHODS:raise PortalError(400,'方法分组无效。')
         return method_id
 
+    def in_study(self,cid):
+        return self.active_cases is None or cid in self.active_cases
+
     def list_methods(self,email):
-        with self.db() as c:
-            counts={r['method_id']:dict(r) for r in c.execute("SELECT o.method_id,COUNT(*) AS total,COUNT(DISTINCT o.case_id) AS cases,SUM(CASE WHEN r.status='submitted' THEN 1 ELSE 0 END) AS done FROM outputs o LEFT JOIN ratings r ON r.output_id=o.id AND r.email=? GROUP BY o.method_id",(email,))}
-        return [{'id':key,'label':label,'total':counts.get(key,{}).get('total',0),'cases':counts.get(key,{}).get('cases',0),'done':counts.get(key,{}).get('done',0)} for key,label in METHODS.items()]
+        result=[]
+        for key,label in METHODS.items():
+            cases=self.list_cases(email,key)
+            result.append({'id':key,'label':label,'total':sum(len(c['outputs']) for c in cases),'cases':sum(bool(c['outputs']) for c in cases),'done':sum(c['done'] for c in cases)})
+        return result
 
     def list_cases(self,email,method_id=DEFAULT_METHOD):
         method_id=self.method(method_id)
         with self.db() as c:
             cases=[]
             for row in c.execute('SELECT * FROM cases'):
+                if not self.in_study(row['id']):continue
                 item=json.loads(row['summary']);item.pop('baseline',None);outputs=[]
                 for o in c.execute('SELECT o.id,o.position,o.payload,r.status FROM outputs o LEFT JOIN ratings r ON r.output_id=o.id AND r.email=? WHERE o.case_id=? AND o.method_id=? ORDER BY o.position',(email,row['id'],method_id)):
                     payload=json.loads(o['payload']);outputs.append({'id':o['id'],'position':o['position'],'label':payload['label'],'status':o['status'] or 'not_started'})
@@ -181,6 +194,7 @@ class Store:
     def preview(self,email,cid):
         if not self.authorized(email):raise PortalError(401,'请先登录。')
         if not ID.fullmatch(cid):raise PortalError(404,'病例不存在。')
+        if not self.in_study(cid):raise PortalError(404,'病例不在当前试评范围。')
         with self.db() as c:r=c.execute('SELECT summary FROM cases WHERE id=?',(cid,)).fetchone()
         if not r:raise PortalError(404,'病例不存在。')
         d=json.loads(r['summary']);return {'case_id':cid,**d.get('baseline',{})}
@@ -197,6 +211,7 @@ class Store:
         with self.db() as c:
             row=c.execute('SELECT * FROM outputs WHERE id=?',(oid,)).fetchone()
             if not row:raise PortalError(404,'记录不存在。')
+            if not self.in_study(row['case_id']):raise PortalError(404,'病例不在当前试评范围。')
             unfinished=c.execute("SELECT COUNT(*) FROM outputs o LEFT JOIN ratings r ON r.output_id=o.id AND r.email=? WHERE o.case_id=? AND o.method_id=? AND o.position<? AND COALESCE(r.status,'')!='submitted'",(email,row['case_id'],row['method_id'],row['position'])).fetchone()[0]
             if unfinished:raise PortalError(403,'请先完成此前时间点的评分。')
             rating=c.execute('SELECT * FROM ratings WHERE email=? AND output_id=?',(email,oid)).fetchone()
@@ -207,13 +222,13 @@ class Store:
         data=json.loads(row['payload'])
         if rating['status']!='submitted':data.pop('reference',None)
         # Only explicit client fields are exported: never model metadata or internal ratings.
-        allowed=['id','case_id','position','label','patient','context','images','answer','answer_original','report_language','assumptions','information_requests','evidence','reference','source_issues']
+        allowed=['id','case_id','position','label','patient','context','images','answer','answer_original','report_language','evidence','reference','source_issues']
         data={k:v for k,v in data.items() if k in allowed}
         data.update(content_hash=row['content_hash'],rubric_version=VERSION,method_id=row['method_id'],method_label=METHODS[row['method_id']],rating=json.loads(rating['payload']),rating_status=rating['status'],revision=rating['revision'])
         return data
 
     def save_rating(self,email,oid,payload,revision,submit=False,rubric_version=VERSION):
-        if rubric_version!=VERSION:raise PortalError(409,'评分标准已更新为R2，请刷新页面后重新评分。')
+        if rubric_version!=VERSION:raise PortalError(409,'评分标准已更新，请刷新页面后重新评分。')
         output=self.output(email,oid);validate_rating(payload,submit)
         if type(revision) is not int:raise PortalError(400,'评分版本无效。')
         with self.db() as c:
@@ -241,6 +256,7 @@ class Store:
         w.writerow(['方法编号','方法名称','病例编号','时间点ID','评分标准版本','回答哈希',*[d[1] for d in DIMENSIONS],*[d[1]+'说明' for d in DIMENSIONS],'安全关键错误','安全错误事件数','安全错误事件_JSON','安全评分不一致说明','待仲裁','总体可接受性','最小必要修改','评审意见','页面活跃秒数','提交时间_北京时间'])
         with self.db() as c:
             for r in c.execute("SELECT r.*,o.case_id,o.method_id FROM ratings r JOIN outputs o ON o.id=r.output_id WHERE r.email=? AND r.status='submitted' AND r.rubric_version=? AND (? IS NULL OR o.method_id=?) ORDER BY o.method_id,o.case_id,o.position",(email,VERSION,method_id,method_id)):
+                if not self.in_study(r['case_id']):continue
                 p=json.loads(r['payload']);events=[{**e,'category':ERRORS[e['category']],'severity':SEVERITY[e['severity']],'consequences':[CONSEQUENCES[x] for x in e['consequences']]} for e in p.get('safety_events',[])]
                 values=[r['method_id'],METHODS[r['method_id']],r['case_id'],r['output_id'],r['rubric_version'],r['content_hash'],*[p['scores'][k] for k in keys],*[p.get('dimension_notes',{}).get(k,'') for k in keys],{'yes':'有','no':'未发现','uncertain':'无法判断'}[p['critical_error']],len(events),json.dumps(events,ensure_ascii=False),p.get('safety_score_explanation',''),'是' if needs_adjudication(p) else '否',OVERALL[p['overall']],p.get('minimum_change',''),p.get('comment',''),p.get('active_seconds',0),datetime.fromtimestamp(r['submitted_at'],timezone(timedelta(hours=8))).isoformat()]
                 w.writerow([("'"+str(v)) if str(v).lstrip('\ufeff \t\r\n').startswith(('=','+','-','@')) else v for v in values])
@@ -314,14 +330,20 @@ def handler(store,origin,prefix):
     class Handler(BaseHTTPRequestHandler):
         server_version='VTEPortal';sys_version=''
         def log_message(self,*args):pass
-        def headers_out(self,status,ctype='application/json; charset=utf-8',cookie=None):
+        def headers_out(self,status,ctype='application/json; charset=utf-8',cookie=None,length=None,encoding=None):
             self.send_response(status);self.send_header('Content-Type',ctype);self.send_header('Cache-Control','no-store')
             self.send_header('X-Content-Type-Options','nosniff');self.send_header('Referrer-Policy','no-referrer')
             self.send_header('X-Frame-Options','DENY');self.send_header('Content-Security-Policy',"default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'")
             if cookie:self.send_header('Set-Cookie',cookie)
+            if length is not None:self.send_header('Content-Length',str(length))
+            if encoding:self.send_header('Content-Encoding',encoding);self.send_header('Vary','Accept-Encoding')
             self.end_headers()
         def json(self,data,status=200,cookie=None):
-            self.headers_out(status,cookie=cookie);self.wfile.write(json.dumps(data,ensure_ascii=False).encode())
+            raw=json.dumps(data,ensure_ascii=False).encode();encoding=None
+            accepted=self.headers.get('Accept-Encoding','').lower()
+            if len(raw)>1024 and re.search(r'(?:^|,)\s*gzip\s*(?:,|$)',accepted):
+                raw=gzip.compress(raw,compresslevel=5,mtime=0);encoding='gzip'
+            self.headers_out(status,cookie=cookie,length=len(raw),encoding=encoding);self.wfile.write(raw)
         def token(self):
             c=SimpleCookie()
             try:c.load(self.headers.get('Cookie',''))
